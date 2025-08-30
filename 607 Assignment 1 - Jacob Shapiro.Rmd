@@ -1,0 +1,46 @@
+---
+title: "607 Assignment 1 - Jacob Shapiro"
+author: "Jacob Shapiro"
+date: "2025-08-30, due 2025-08-31"
+output: 
+  html_document:
+   df_print: paged
+
+---
+<style type="text/css">
+.main-container {
+  max-width: 100% !important;
+  margin: auto;
+}
+options("width"=300)
+</style>
+<!-- Note need above for all columns to appear together -->
+
+Overview
+
+This data set is about the chemical contents of wine from the Vino Verdhe region of Portugal. This data was pulled from https://archive.ics.uci.edu/dataset/186/wine+quality and was selected because I like wine and am interested in the different types of wine. Additionally, my undergrad was chemical engineering so the chemical component of this data set was interesting to me as well.
+
+<!-- #Noted it has to be the raw file from github -->
+<!-- shortcut for comment is CTRL + SHIFT + C -->
+<!-- shortcut for rmd code chunk is CTRL + ALT + I  -->
+
+```{r}
+x <- read.csv("https://raw.githubusercontent.com/jacshap/Data607/refs/heads/main/winequality-red.csv", header = TRUE, sep=";")
+```
+
+```{r, rows.print=25}
+wine <- x[,c(1,3,4,5,7,8,11,12)]
+
+colnames(wine)[1] <- "acidity"
+colnames(wine)[7] <- "alcohol percentage"
+
+#tried using dplyr package on the below but was giving weird output
+#wine_renamed <- wine %>% rename("acidity" = "fixed.acidity", "alcohol percentage" = "alcohol")
+
+head(wine, n=50)
+```
+<!-- # Noted need to have lines 5-7 to allow for columns to print on same line and rows.print in the code chunk -->
+
+Conclusions
+
+In the future I'd like to explore the relationship of the first 7 columns in the "wine" dataframe to quality and see if there are any statistically relevant relationships. I learned how to set up a github repository, use an R Markdown file, import from github, make the knit display all columns in one row, and if you're seeing this I'll have learned how to publish to Rpubs.
