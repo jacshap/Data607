@@ -1,0 +1,273 @@
+---
+title: "607 Assignment 2B"
+author: "Jacob Shapiro"
+date: "2025-09-04"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Assignment 2B - Penguin Sex
+
+## Load the Data
+
+```{r}
+pen <- read.csv("https://raw.githubusercontent.com/acatlin/data/refs/heads/master/penguin_predictions.csv", header = TRUE)
+```
+
+## Null Error Rate
+
+Calculate and state the null error rate for the provided classification_model_performance.csv dataset. Create a plot showing the data distribution of the actual explanatory variable. Explain why always knowing the null error rate (or majority class percent) matters.
+
+```{r, include=FALSE}
+library(dplyr)
+library(tidyverse)
+library(ggplot2)
+```
+
+
+Null Error Rate is actual no's (or non positive values) - in this case "male" - over the total items:
+
+```{r}
+null_rate = sum(pen$sex=="male")/count(pen)
+print(null_rate)
+```
+
+We can see a null error rate of 58% so that is the percentage of "male" in the sex column. Let's graph it:
+
+```{r}
+#sumBarLabels <- c(sum(pen$sex=="female")/93,sum(pen$sex=="male")/93)
+ggplot(data = pen, aes(x=sex, fill=sex)) + geom_bar() +
+  #geom_text(aes(label = sumBarLabels, vjust=0)) +
+  #I can't figure out the labels thing
+  labs(
+    title = "Count of Male and Female Penguins",
+    subtitle = "From the data set",
+    x = "Penguin Sexes",
+    y = "Number of Penguins",
+    color = "Cylinders"
+  )+
+  scale_color_brewer(palette = "Set1") +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(size = 18, face = "bold", hjust = 0.5),
+    plot.subtitle = element_text(size = 12, hjust = 0.5),
+    axis.title = element_text(size = 14),
+    legend.position = "bottom"
+  )
+```
+
+It's important to know the null error rate to get a baseline understanding of what the majority of the data set is. It helps set expectations and steer the analysis.
+
+
+## Confusion Matrices
+
+Analyze the data to determine the true positive, false positive, true negative, and
+false negative values for the dataset, using .pred_female thresholds of 0.2, 0.5,
+and 0.8. Display your results in three confusion matrices, with the counts of TP,
+FP, TN, and FN. You may code your confusion matrix “by hand” (encouraged!),
+but full credit if you use “pre-packaged methods” here.
+
+
+#### .pred_female threshold of 0.2
+
+```{r}
+pen2 <- pen
+pen2 <- pen2 %>% mutate(.pred_class=ifelse(.pred_female>=.2,"female","male"))
+pen2 <- pen2 %>% mutate(TP=ifelse(.pred_class=="female" & sex=="female", 1,0)) #True Positive
+pen2 <- pen2 %>% mutate(FP=ifelse(.pred_class=="female" & sex=="male", 1,0)) #False Positive
+pen2 <- pen2 %>% mutate(TN=ifelse(.pred_class=="male" & sex=="male", 1,0)) #True Negative
+pen2 <- pen2 %>% mutate(FN=ifelse(.pred_class=="male" & sex=="female", 1,0)) #False Negative
+```
+
+##### Sums
+
+```{r}
+sumTP=sum(pen2$TP)
+sumTN=sum(pen2$TN)
+sumFP=sum(pen2$FP)
+sumFN=sum(pen2$FN)
+sumTot=sumTP+sumTN+sumFP+sumFN
+
+#Accuracy, Precision, Recall, and F1 for Question 3
+acc2 = (sumTP+sumTN)/sumTot
+prec2 = sumTP/(sumTP+sumFP)
+rec2 = sumTP / (sumTP+sumFN)
+f12 = 2 * prec2 * rec2 / (prec2 + rec2)
+```
+
+##### Plot
+
+```{r}
+# Confusion matrix table
+conf_matrix <- matrix(c(sumTP, sumFN, sumFP, sumTN), nrow = 2, byrow = TRUE)
+rownames(conf_matrix) <- c("Actual: Positive", "Actual: Negative")
+colnames(conf_matrix) <- c("Predicted: Positive", "Predicted: Negative")
+
+# convert to df for plotting
+conf_df <- as.data.frame(as.table(conf_matrix))
+
+# plot from data frame
+ggplot(conf_df, aes(x = Var2, y = Var1, fill = Freq)) +
+  geom_tile(color = "white") +
+  geom_text(aes(label = Freq), color = "black", size = 6) +
+  scale_fill_gradient(low = "white", high = "blue") +
+  theme_minimal() +
+  labs(
+    title = "Confusion Matrix Threshold 20%",
+    x = "Predicted",
+    y = "Actual"
+  ) +
+  theme(
+    plot.title = element_text(hjust = 0.5, size = 16, face = "bold"),
+    axis.text = element_text(size = 12),
+    axis.title = element_text(size = 14)
+  )
+
+```
+
+
+#### .pred_female threshold of 0.5
+```{r}
+pen5 <- pen
+pen5 <- pen5 %>% mutate(TP=ifelse(.pred_class=="female" & sex=="female", 1,0)) #True Positive
+pen5 <- pen5 %>% mutate(FP=ifelse(.pred_class=="female" & sex=="male", 1,0)) #False Positive
+pen5 <- pen5 %>% mutate(TN=ifelse(.pred_class=="male" & sex=="male", 1,0)) #True Negative
+pen5 <- pen5 %>% mutate(FN=ifelse(.pred_class=="male" & sex=="female", 1,0)) #False Negative
+```
+
+##### Sums
+
+```{r}
+sumTP=sum(pen5$TP)
+sumTN=sum(pen5$TN)
+sumFP=sum(pen5$FP)
+sumFN=sum(pen5$FN)
+sumTot=sumTP+sumTN+sumFP+sumFN
+
+#Accuracy, Precision, Recall, and F1 for Question 3
+acc5 = (sumTP+sumTN)/sumTot
+prec5 = sumTP/(sumTP+sumFP)
+rec5 = sumTP / (sumTP+sumFN)
+f15 = 2 * prec5 * rec5 / (prec5 + rec5)
+```
+
+##### Plot
+
+```{r}
+# Confusion matrix table
+conf_matrix <- matrix(c(sumTP, sumFN, sumFP, sumTN), nrow = 2, byrow = TRUE)
+rownames(conf_matrix) <- c("Actual: Positive", "Actual: Negative")
+colnames(conf_matrix) <- c("Predicted: Positive", "Predicted: Negative")
+
+# convert to df for plotting
+conf_df <- as.data.frame(as.table(conf_matrix))
+
+# plot from data frame
+ggplot(conf_df, aes(x = Var2, y = Var1, fill = Freq)) +
+  geom_tile(color = "white") +
+  geom_text(aes(label = Freq), color = "black", size = 6) +
+  scale_fill_gradient(low = "white", high = "blue") +
+  theme_minimal() +
+  labs(
+    title = "Confusion Matrix Threshold 50%",
+    x = "Predicted",
+    y = "Actual"
+  ) +
+  theme(
+    plot.title = element_text(hjust = 0.5, size = 16, face = "bold"),
+    axis.text = element_text(size = 12),
+    axis.title = element_text(size = 14)
+  )
+
+```
+
+
+#### .pred_female threshold of 0.8
+
+```{r}
+pen8 <- pen
+pen8 <- pen8 %>% mutate(.pred_class=ifelse(.pred_female>=.8,"female","male"))
+pen8 <- pen8 %>% mutate(TP=ifelse(.pred_class=="female" & sex=="female", 1,0)) #True Positive
+pen8 <- pen8 %>% mutate(FP=ifelse(.pred_class=="female" & sex=="male", 1,0)) #False Positive
+pen8 <- pen8 %>% mutate(TN=ifelse(.pred_class=="male" & sex=="male", 1,0)) #True Negative
+pen8 <- pen8 %>% mutate(FN=ifelse(.pred_class=="male" & sex=="female", 1,0)) #False Negative
+```
+
+##### Sums
+
+```{r}
+sumTP=sum(pen8$TP)
+sumTN=sum(pen8$TN)
+sumFP=sum(pen8$FP)
+sumFN=sum(pen8$FN)
+sumTot=sumTP+sumTN+sumFP+sumFN
+
+#Accuracy, Precision, Recall, and F1 for Question 3
+acc8 = (sumTP+sumTN)/sumTot
+prec8 = sumTP/(sumTP+sumFP)
+rec8 = sumTP / (sumTP+sumFN)
+f18 = 2 * prec8 * rec8 / (prec8 + rec8)
+```
+
+##### Plot
+
+```{r}
+# Confusion matrix table
+conf_matrix <- matrix(c(sumTP, sumFN, sumFP, sumTN), nrow = 2, byrow = TRUE)
+rownames(conf_matrix) <- c("Actual: Positive", "Actual: Negative")
+colnames(conf_matrix) <- c("Predicted: Positive", "Predicted: Negative")
+
+# convert to df for plotting
+conf_df <- as.data.frame(as.table(conf_matrix))
+
+# plot from data frame
+ggplot(conf_df, aes(x = Var2, y = Var1, fill = Freq)) +
+  geom_tile(color = "white") +
+  geom_text(aes(label = Freq), color = "black", size = 6) +
+  scale_fill_gradient(low = "white", high = "blue") +
+  theme_minimal() +
+  labs(
+    title = "Confusion Matrix Threshold 80%",
+    x = "Predicted",
+    y = "Actual"
+  ) +
+  theme(
+    plot.title = element_text(hjust = 0.5, size = 16, face = "bold"),
+    axis.text = element_text(size = 12),
+    axis.title = element_text(size = 14)
+  )
+
+```
+
+
+
+## Accuracy, Precision, Recall, and F1
+
+Create a table showing—for each of the three thresholds—the accuracy,
+precision, recall, and F1 scores.
+
+Accuracy = TP + TN / total
+Precision = TP/ (TP+FP)
+Recall = TP / (TP+FN)
+F1 = 2 * Precision * Recall / (Precision + Recall)
+
+```{r}
+#confs <- data.frame(c("20%", "50%", "80%"),c("Accuracy", "Precision", "Recall", "F1"))#, nrow=4, byrow=TRUE)
+df <- data.frame(c(acc2, prec2, rec2, f12), c(acc5, prec5, rec5, f15), c(acc8, prec8, rec8, f18), row.names = c("Accuracy", "Precision", "Recall", "F1"))
+colnames(df) <- c("20%", "50%", "80%")
+print(df)
+```
+
+
+## Preference examples
+
+Provide at least one example use case where (a) an 0.2 scored probability
+threshold would be preferable, and (b) an 0.8 scored probability threshold would
+be preferable.
+
+An example for the .2 probability is if you're going to do a fertility study and you want to know how much birth control will be needed, the Recall is higher than other probabilities which informs how many true positives there are. 
+
+An example of using the .8 probability is if you want higher accuracy. The data set is relatively close in the amount of different target variable class, sex, thus is a good predictor. A case for this would be if you're setting up a zoo exhibit and you have a limit of the number of male penguins, this is a good predictor. Having a lower recall is not as significant as the male trait is the target factor.
