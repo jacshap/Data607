@@ -1,0 +1,62 @@
+---
+title: "Week_2A_Survey_JRS"
+author: "Jacob Shapiro"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Connecting to the PostgreSQL database and importing the table
+
+Please note my friends don't watch a lot of movies that overlap so I decided to go with TV shows, and created some categories to get more data that could be explored later. I gathered data in an excel sheet "Interviews.xlsx" because I was on vacation with them this past week and gathered live.
+
+
+```{r}
+#utilizing IBM site here for connection https://dataplatform.cloud.ibm.com/exchange/public/entry/view/bf1d847b1638af654a0eb849842f85ee?context=cpdaas
+#Note: had to install RTools
+#install.packages("RPostgreSQL")
+#install.packages("DBI")
+library(DBI)
+library(RPostgreSQL)
+
+#Enter the values for you database connection
+dsn_database = "week2Asurvey"       # for example  "compose"
+dsn_hostname = "localhost"     # for example  "aws-us-east-1-portal.4.dblayer.com"
+dsn_port = "5432"                 # for example  11101 
+dsn_uid = "jacshap"        # for example  "admin"
+#dsn_pwd = ""      # note: included in above chunk that is hidden in published version. Will delete as part of upload to github & this submission
+
+tryCatch({
+    drv <- dbDriver("PostgreSQL")
+    print("Connecting to database")
+    conn <- dbConnect(drv, 
+                 dbname = dsn_database,
+                 host = dsn_hostname, 
+                 port = dsn_port,
+                 user = dsn_uid, 
+                 password = dsn_pwd)
+    print("Connected!")
+    },
+    error=function(cond) {
+            print("Unable to connect to database.")
+    })
+
+#Big Note: kept getting error that password was incorrect. Had to follow this video to fix (changed conf file and altered user in pgadmin) https://www.youtube.com/watch?v=CHYjDuaYA4M&ab_channel=DatabaseStar
+
+#Tables that exist in the db
+cursor <- dbGetQuery(conn, "SELECT datname from pg_database")
+cursor$datname
+
+df <- dbGetQuery(conn, "SELECT * FROM shows")
+
+print(df)
+
+```
+
+
+
+
+
