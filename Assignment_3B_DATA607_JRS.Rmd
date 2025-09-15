@@ -1,0 +1,133 @@
+---
+title: "DATA 607 Assignment 3B"
+author: "Jacob Shapiro"
+date: "2025-09-11"
+output: 
+  html_document:
+   df_print: paged
+   
+---
+
+<style type="text/css">
+.main-container {
+  max-width: 100% !important;
+  margin: auto;
+}
+options("width"=300)
+</style>
+<!-- Note need above for all columns to appear together -->
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Load Data Set
+
+"1. Find (or ask an LLM to generate!) a dataset that includes time series for two or more separate items.  For example, you could use end of day stock or cryptocurrency prices since Jan 1, 2022 for several instruments."
+
+I used Chat GPT to tell me how to load tickers from Jan 1, 2022 to current day in R. The prompts used were:
+
+1. generate a csv file of all end of day stock prices from January 1, 2022 until today for the tickers NVDA, FXAIX, and MSFT
+2. tell me how to do this in R
+
+Code instructions below:
+
+```{r, message=FALSE}
+#install.packages("quantmod")
+library(quantmod)
+library(dplyr)
+library(tidyverse)
+```
+
+```{r}
+# mentioned "You can use the getSymbols function to fetch the stock data. The Yahoo Finance API is the default source for this function."
+
+# Define the tickers
+tickers <- c("NVDA", "FXAIX", "MSFT")
+
+# Define the start and end dates
+start_date <- as.Date("2022-01-01")
+end_date <- Sys.Date()
+
+# Download stock data
+stock_data <- lapply(tickers, function(ticker) {
+  getSymbols(ticker, src = "yahoo", from = start_date, to = end_date, auto.assign = FALSE)
+})
+
+# Combine the stock data into one data frame
+stock_data_combined <- do.call(merge, stock_data)
+
+# Convert data to a data frame for easier handling
+stock_data_df <- data.frame(Date = index(stock_data_combined), coredata(stock_data_combined))
+
+# View the combined data
+head(stock_data_df)
+```
+
+FXAIX open and close are the same due to it being an index fund so the end of day price is the only price for the day.
+
+## YTD Averages
+
+"2. Use window functions (in SQL or dplyr) to calculate the year-to-date average and the six-day moving averages for each item."
+
+Making filtered table that just keeps the close prices for the three tickers:
+
+```{r}
+close_ticks <- stock_data_df %>%
+  dplyr::select(Date, NVDA.Close, FXAIX.Close, MSFT.Close)
+```
+
+Calculate the year to date averages
+
+```{r}
+YTD_avgs <- close_ticks %>% filter(Date>="2025-01-01") %>% summarise(across(NVDA.Close:MSFT.Close, mean))
+print(YTD_avgs)
+```
+
+
+
+## Six-Day Moving Averages
+
+Need to create lag tables 
+
+```{r}
+# lag1 <- lag(close_ticks)
+# lag2 <- lag(close_ticks,n=2)
+# lag3 <- lag(close_ticks,n=3)
+# lag4 <- lag(close_ticks,n=4)
+# lag5 <- lag(close_ticks,n=5)
+
+#six_movavg <- close_ticks %>% mutate(NVDA_avg = mean(across(close_ticks$NVDA.Close, lag1$NVDA.Close, lag2$NVDA.Close, lag3$NVDA.Close, lag4$NVDA.Close, lag5$NVDA.Close)))
+
+#tried changing mean to be across the list c(NVDA.Close, lag1, lag2, lag3, lag4, lag5), mean, na.rm=TRUE))) but kept getting errors
+
+#searched online and saw zoo package being used and didn't want to add another package but found solution using rowwise and c_across from tidyverse which is a common package https://stackoverflow.com/questions/28744419/dplyr-mean-for-multiple-columns
+
+library(tidyverse)
+
+six_movavg <- close_ticks %>% 
+  mutate(NVDAlag1 = lag(NVDA.Close),
+         NVDAlag2 = lag(NVDA.Close, n=2),
+         NVDAlag3 = lag(NVDA.Close, n=3),
+         NVDAlag4 = lag(NVDA.Close, n=4),
+         NVDAlag5 = lag(NVDA.Close, n=5),
+         FXAIXlag1 = lag(FXAIX.Close), 
+         FXAIXlag2 = lag(FXAIX.Close, n=2),
+         FXAIXlag3 = lag(FXAIX.Close, n=3),
+         FXAIXlag4 = lag(FXAIX.Close, n=4),
+         FXAIXlag5 = lag(FXAIX.Close, n=5),
+         MSFTlag1 = lag(MSFT.Close), 
+         MSFTlag2 = lag(MSFT.Close, n=2),
+         MSFTlag3 = lag(MSFT.Close, n=3),
+         MSFTlag4 = lag(MSFT.Close, n=4),
+         MSFTlag5 = lag(MSFT.Close, n=5,)) %>%
+  rowwise() %>%
+  mutate(,
+         NVDA_avg = mean(c_across(starts_with("NVDA")), na.rm = TRUE),
+         FXAIX_avg = mean(c_across(starts_with("FXAIX")), na.rm = TRUE),
+         MSFT_avg = mean(c_across(starts_with("MSFT")), na.rm = TRUE)) %>%
+  select(Date, NVDA.Close, NVDA_avg, FXAIX.Close, FXAIX_avg, MSFT.Close, MSFT_avg)
+
+knitr::kable(as.data.frame(six_movavg))
+```
+
