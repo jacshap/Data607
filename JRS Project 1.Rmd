@@ -1,0 +1,227 @@
+---
+title: "DATA 607 Project 1"
+author: "Jacob Shapiro"
+date: "`r Sys.Date()`"
+output: 
+  html_document:
+   df_print: paged
+---
+
+<style type="text/css">
+.main-container {
+  max-width: 100% !important;
+  margin: auto;
+}
+options("width"=300)
+</style>
+<!-- Note need above for all columns to appear together -->
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## The Project
+
+In this project, you’re given a text file with chess tournament results where the information has some structure. Your job is to create an R Markdown file that generates a .CSV file (that could for example be imported into a SQL database) with the following information for all of the players:
+
+Player’s Name, Player’s State, Total Number of Points, Player’s Pre-Rating, and Average Pre Chess Rating of Opponents
+
+For the first player, the information would be: Gary Hua, ON, 6.0, 1794, 1605
+
+1605 was calculated by using the pre-tournament opponents’ ratings of 1436, 1563, 1600, 1610, 1649, 1663, 1716, and dividing by the total number of games played.
+
+## Importing text file
+
+Need to import text file in some way - will take some experimenting but can start with delimiter of "-----------------------------------------------------------------------------------------".
+
+```{r , include = FALSE}
+library(dplyr)
+library(tidyverse)
+library(readr)
+```
+
+
+```{r}
+chess <- read_delim("https://raw.githubusercontent.com/jacshap/Data607/refs/heads/main/tournamentinfo.txt", delim = "-----------------------------------------------------------------------------------------", col_names = TRUE, show_col_types = FALSE) 
+#problems(chess)
+#Let`s just try read.table
+#chess2 <- read.table("https://raw.githubusercontent.com/jacshap/Data607/refs/heads/main/tournamentinfo.txt", sep = "\t", header = T)
+#Not very helpful. Will just work with readr package output.
+
+#to fix problems let`s get rid of 2nd column and omit NA rows to clean
+names(chess)[1] <- "base"
+chess <- chess %>% select(base)
+chess <- na.omit(chess)
+```
+
+
+Now we`ve read in the file by row and need to split per the delimiter "|". Retitle columns, drop last column because R wanted to keep the last "|" in Round 7, and drop first two rows because those used to be the headers.
+
+```{r}
+library(tidyr)
+chess <- separate_wider_delim(chess, cols = base, delim = "|", names = c("Pair_Num", "Player_Name", "Total_Pts", "Round_1", "Round_2", "Round_3", "Round_4", "Round_5", "Round_6", "Round_7", "extra"), too_many = "merge") %>% select(-last_col()) %>% slice(-(1:2))
+head(chess)
+```
+
+Let`s get player`s state and other info from second line into first line with player`s name
+
+```{r}
+#chess_manip <- chess %>% group_by(Pair_Num) %>% summarise(Player_Name = paste(Player_Name, collapse = ","), Total_Pts = paste(Total_Pts, collapse = ","), Round_1 = paste(Round_1, collapse = ","), Round_2 = paste(Round_2, collapse = ","), Round_3 = paste(Round_3, collapse = ","), Round_4 = paste(Round_4, collapse = ","), Round_5 = paste(Round_5, collapse = ","), Round_6 = paste(Round_6, collapse = ","), Round_7 = paste(Round_7, collapse = ","))
+
+# drop last 3 rows
+#chess_manip <- chess_manip %>% slice((1:(n()-3)))
+
+# Actually realizing this doesn't work. Need to combine two rows at a time. Mutate with a group # and try the above again.
+
+chess_manip <- chess %>% mutate(Group = n() / 2)
+
+# Googled "r combine two rows at a time in dataframe"
+chess_manip <- chess %>% mutate(Group = ceiling(row_number() / 2))
+chess_manip <- chess_manip %>% group_by(Group) %>% summarise(Pair_Num = paste(Pair_Num, collapse = ","), Player_Name = paste(Player_Name, collapse = ","), Total_Pts = paste(Total_Pts, collapse = ","), Round_1 = paste(Round_1, collapse = ","), Round_2 = paste(Round_2, collapse = ","), Round_3 = paste(Round_3, collapse = ","), Round_4 = paste(Round_4, collapse = ","), Round_5 = paste(Round_5, collapse = ","), Round_6 = paste(Round_6, collapse = ","), Round_7 = paste(Round_7, collapse = ","))
+```
+
+## Rename and Clean Up
+
+Okie dokie. At this point for this assignment we just need the names, states, Total Points, and pre-game ratings. Let's rename Group to Pair_Num, Pair_Num to State & get rid of stuff before comma, and for columns of Total Points through Round 7 let's get rid of the stuff after the comma. 
+
+```{r}
+# Rename Columns
+chess_manip <- chess_manip %>% rename(State = Pair_Num, Pair_Num = Group)
+
+# Split and keep 2nd part of resulting list
+chess_manip <- chess_manip %>% mutate(State = sapply(strsplit(State, ","), `[`,2))
+
+# Similar for Total Pts & Rounds columns but keep first thing. Also remembered can use across()
+chess_manip <- chess_manip %>% mutate(across(Total_Pts:Round_7, ~ sapply(strsplit(.x, ","), `[`,1)))
+
+
+# Split Rounds columns on the space delimiter to keep who they played
+
+#chess_manip %>% mutate(across(Round_1:Round_7, ~ sapply(strsplit(.x, " "), `[`,2)))
+# Not keeping who they played, just keeping blank. Need to try different method? - Apparently adding in the + works on spaces
+chess_manip <- chess_manip %>% mutate(across(Round_1:Round_7, ~ sapply(strsplit(.x, " +"), `[`,2)))
+
+
+# Split Player_Name column on the comma and keep the pre-game rating in new column
+chess_manip <- separate_wider_delim(chess_manip, cols = Player_Name, delim = ",", names = c("Player_Name", "Pre_Game_Rank"))
+# splitted, now manipulate pre-game rank to be left in column
+chess_manip <- chess_manip %>% mutate(Pre_Game_Rank = sapply(strsplit(Pre_Game_Rank, "R: "), `[`, 2))
+# kept everything to the right of "R: "
+chess_manip <- chess_manip %>% mutate(Pre_Game_Rank = if_else(str_detect(Pre_Game_Rank,'P'), sapply(strsplit(Pre_Game_Rank, 'P'), `[`, 1), Pre_Game_Rank))
+# got rid of P stuff
+#chess_manip %>% mutate(Pre_Game_Rank, sapply(strsplit(Pre_Game_Rank, ' +'), `[`,1))
+# not working - try above if_else because some are already done
+#chess_manip %>% mutate(Pre_Game_Rank = if_else(str_detect(Pre_Game_Rank,' '), sapply(strsplit(Pre_Game_Rank, ' '), `[`, 1), Pre_Game_Rank))
+# close but got rid of some values. Get rid of spaces to left then try again
+chess_manip <- chess_manip %>% mutate(across(Pair_Num:Round_7, ~ trimws(.x, which = "left")))
+chess_manip %>% mutate(Pre_Game_Rank = if_else(str_detect(Pre_Game_Rank,' +'), sapply(strsplit(Pre_Game_Rank, ' +'), `[`, 1), Pre_Game_Rank))
+# Success!!
+chess_manip <- chess_manip %>% mutate(Pre_Game_Rank = if_else(str_detect(Pre_Game_Rank,' +'), sapply(strsplit(Pre_Game_Rank, ' +'), `[`, 1), Pre_Game_Rank))
+
+```
+
+Probably also a good idea to clean up extra spaces
+
+```{r}
+chess_manip <- chess_manip %>% mutate(across(Pair_Num:Round_7, ~ trimws(.x, which = "right")))
+chess_manip <- chess_manip %>% mutate(across(Pair_Num:Round_7, ~ trimws(.x, which = "left")))
+```
+
+
+## Let's Make The CSV
+
+Let's make a dataframe that can be put into CSV format, more specifically.
+
+```{r}
+chess_csv <- chess_manip %>% select(Pair_Num, Player_Name, State, Total_Pts, Pre_Game_Rank) #%>% mutate(Avg_Rank_Played = 
+
+# might need to make a function
+# for each row, I want to take the Round columns and use the number to search Pair_Num and output Pre_Game_Rank for that Pair_Num, and I want to add that output to a list which I could get the mean of
+# test case on first row
+
+#chess_manip[match('39', chess_manip['Pair_Num']),'Pre_Game_Rank'] returning NA can't get this to work
+# gonna try finding position of Pair_Num that matches Round_1 and print that position for Pre_Game_Rank for first row
+round1 <- chess_manip %>% filter(Pair_Num == 1) %>% pull(Round_1)
+pre_game1 <- chess_manip %>% filter(Pair_Num == round1) %>% pull(Pre_Game_Rank)
+print(pre_game1)
+
+#ok so this worked. To make it formulaic can try to take all values for the rounds per person and put into a list and then take a subset
+#actually that seems hard and would probably need a for loop, which we haven't really done yet.
+# can try mutating columns per round to pull Pre_Game_Rank and then averaging those and making as a column in csv table
+#chess_manip %>% mutate(round1_rank = (chess_manip %>% filter(Pair_Num == Round_1) %>% pull(Pre_Game_Rank))) not working. Going back to subset idea.
+
+columns_to_extract <- c("Round_1", "Round_2", "Round_3", "Round_4", "Round_5", "Round_6", "Round_7")
+ex<- as.list(chess_manip[1,columns_to_extract])
+#ex_sub <- subset(chess_manip,  columns_to_extract == Pair_Num, select = Pre_Game_Rank)
+ex_sub <- chess_manip %>% filter(Pair_Num %in% columns_to_extract)
+#I can't get this to work. Just gonna try to brute force with the above.
+list_to_extract <- function(x) {
+  round1 <- chess_manip %>% filter(Pair_Num == rownames(chess_manip)) %>% pull(Round_1)
+  pre_game1 <- chess_manip %>% filter(Pair_Num == round1) %>% pull(Pre_Game_Rank)
+  round2 <- chess_manip %>% filter(Pair_Num == rownames(chess_manip)) %>% pull(Round_2)
+  pre_game2 <- chess_manip %>% filter(Pair_Num == round2) %>% pull(Pre_Game_Rank)
+  round3 <- chess_manip %>% filter(Pair_Num == rownames(chess_manip)) %>% pull(Round_3)
+  pre_game3 <- chess_manip %>% filter(Pair_Num == round3) %>% pull(Pre_Game_Rank)
+  round4 <- chess_manip %>% filter(Pair_Num == rownames(chess_manip)) %>% pull(Round_4)
+  pre_game4 <- chess_manip %>% filter(Pair_Num == round4) %>% pull(Pre_Game_Rank)
+  round5 <- chess_manip %>% filter(Pair_Num == rownames(chess_manip)) %>% pull(Round_5)
+  pre_game5 <- chess_manip %>% filter(Pair_Num == round5) %>% pull(Pre_Game_Rank)
+  round6 <- chess_manip %>% filter(Pair_Num == rownames(chess_manip)) %>% pull(Round_6)
+  pre_game6 <- chess_manip %>% filter(Pair_Num == round6) %>% pull(Pre_Game_Rank)
+  round7 <- chess_manip %>% filter(Pair_Num == rownames(chess_manip)) %>% pull(Round_7)
+  pre_game7 <- chess_manip %>% filter(Pair_Num == round7) %>% pull(Pre_Game_Rank)
+  
+  paste(pre_game1, pre_game2, pre_game3, pre_game4, pre_game5, pre_game6, pre_game7, sep = ",", collapse = "")
+}
+
+chess_csv %>% mutate(Avg_Opp_Rating = list_to_extract(x))
+
+#can't get the above function to work. When I put n() where the rownames thing it it's at least pulling the correct things for player 64 but can't get it to do per row.
+#try making list for each step and filtering based on those then getting sum and adding to a list? Idk prob will just try doing a for loop, or look more into match function but I haven't been able to get it to work
+
+mean_vector <- c()
+
+for (i in 1:nrow(chess_manip)){
+  round1 <- chess_manip %>% filter(Pair_Num == i) %>% pull(Round_1)
+  pre_game1 <- chess_manip %>% filter(Pair_Num == round1) %>% pull(Pre_Game_Rank)
+  round2 <- chess_manip %>% filter(Pair_Num == i) %>% pull(Round_2)
+  pre_game2 <- chess_manip %>% filter(Pair_Num == round2) %>% pull(Pre_Game_Rank)
+  round3 <- chess_manip %>% filter(Pair_Num == i) %>% pull(Round_3)
+  pre_game3 <- chess_manip %>% filter(Pair_Num == round3) %>% pull(Pre_Game_Rank)
+  round4 <- chess_manip %>% filter(Pair_Num == i) %>% pull(Round_4)
+  pre_game4 <- chess_manip %>% filter(Pair_Num == round4) %>% pull(Pre_Game_Rank)
+  round5 <- chess_manip %>% filter(Pair_Num == i) %>% pull(Round_5)
+  pre_game5 <- chess_manip %>% filter(Pair_Num == round5) %>% pull(Pre_Game_Rank)
+  round6 <- chess_manip %>% filter(Pair_Num == i) %>% pull(Round_6)
+  pre_game6 <- chess_manip %>% filter(Pair_Num == round6) %>% pull(Pre_Game_Rank)
+  round7 <- chess_manip %>% filter(Pair_Num == i) %>% pull(Round_7)
+  pre_game7 <- chess_manip %>% filter(Pair_Num == round7) %>% pull(Pre_Game_Rank)
+  
+  pre_game_char <- c(pre_game1, pre_game2, pre_game3, pre_game4, pre_game5, pre_game6, pre_game7)
+  pre_game_num <- as.numeric(pre_game_char)
+  
+  new_mean <- mean(pre_game_num, na.rm=TRUE)
+  
+  mean_vector <- c(mean_vector, new_mean)
+  
+}
+
+print(mean_vector)
+
+#sanity check that first row should be 1605.286
+mean(c(1436, 1563, 1600, 1610, 1649, 1663, 1716))
+#double sanity check with an example with NA in it - #12 to be 1506.167
+mean(c(1332, 1449, 1655, 1423, 1794, 1384))
+#beast mode
+
+```
+
+Ok, finally got a vector of the means. Time to mutate to the chess_csv table and print to csv
+
+```{r}
+chess_csv <- chess_csv %>% mutate(Avg_Opp_Ranks = mean_vector)
+
+write.csv(chess_csv, "chess_data_JRS.csv", row.names = FALSE)
+```
+
+
