@@ -1,0 +1,136 @@
+---
+title: "Assignment_5A_Tidying&Transforming_Data_Airlines_JRS"
+author: "Jacob Shapiro"
+date: "`r Sys.Date()`"
+output: 
+  html_document :
+  df_print: paged
+---
+<style type="text/css">
+.main-container {
+  max-width: 100% !important;
+  margin: auto;
+}
+options("width"=300)
+</style>
+<!-- Note need above for all columns to appear together -->
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(dplyr)
+library(tidyr)
+```
+
+# Read in .csv file from github repo
+```{r}
+wide_df <- read_csv('https://raw.githubusercontent.com/jacshap/Data607/refs/heads/main/Assignment_5A_Flight_Data.csv')
+
+print(wide_df)
+
+wide_df <- wide_df %>% rename(Airline  = ...1, Status = ...2)
+```
+
+
+## Provide code to populate missing data?
+
+```{r}
+wide_df[2,1] = "ALASKA"
+wide_df[4,1] = "AMWEST"
+```
+
+
+## Transform data from wide to long format
+
+```{r}
+df <- wide_df %>% pivot_longer(cols = 'Los Angeles':'Seattle',
+                               names_to = 'City',
+                               values_to = "Amount"
+                               )
+```
+
+
+# Perform analysis to compare the arrival delays for the two airlines
+
+Make table of average delay per airline.
+
+```{r}
+avg_delays <- df %>% group_by(Airline) %>% filter(Status == "delayed") %>% summarize(avg_delay = mean(Amount))
+
+print(avg_delays)
+
+ggplot(data = avg_delays, aes(x=Airline, y=avg_delay, fill = Airline)) +
+  geom_bar(stat = 'identity') +
+  labs(title = "Average Delay per Airline", x = "Airline", y = "Average Delay") + 
+  theme_light()
+```
+
+AMWEST has, on average, over 50% more delays than ALASKA.
+
+## Compare percentage (not just counts) of either delays or arrival rates for two airlines overall (table, or chart, or both). Summarize in text.
+
+Make table per airline of percentage of delay rates.
+
+```{r}
+perc_delays <- df %>% group_by(Airline) %>% summarize(percent_delayed = sum(Amount[Status=="delayed"])*100/sum(Amount[Status=="on time"]))
+
+print(perc_delays)
+
+ggplot(data = perc_delays, aes(x=Airline, y=percent_delayed, fill = Airline)) +
+  geom_bar(stat = 'identity') +
+  labs(title = "Delay Percentage per Airline", x = "Airline", y = "Percent Delay") + 
+  theme_light()
+```
+
+Despite ALASKA having less overall mean delays, they have the higher percentage of delayed flights.
+
+## Compare percentage (not just counts) of either delays or arrival rates for two airlines across five cities (table, or chart, or both). Summarize in text.
+
+Same as above but also group by city.
+
+```{r}
+perc_city_delays <- df %>% group_by(Airline, City) %>% summarize(percent_delayed = sum(Amount[Status=="delayed"])*100/sum(Amount[Status=="on time"])) %>% arrange(desc(percent_delayed))
+
+print(perc_city_delays)
+
+#reorder puts city in descending order
+ggplot(data = perc_city_delays, aes(x=reorder(City, -percent_delayed), y=percent_delayed, fill = Airline)) +
+  geom_bar(stat = 'identity', position = 'dodge') +
+  labs(title = "Delay Percentage per City", x = "City", y = "Percent Delay") + 
+  theme_light()
+```
+
+Both airlines have a relative amount of delays depending on the city, with the same trend among the same cities but AMWEST consistently having higher percentage of delays. Based on this, the city or airport may make the biggest difference in amount of delays. San Francisco and Seattle had especially high amounts of delays for AMWEST.
+
+## Describe discrepancy between comparing two airlines’ flight performances city-by-city and overall.
+
+City-by-city we can see that ALASKA has a lower delay, but overall Alaska has the higher percentage of delayed flights.
+
+## Explain discrepancy between comparing two airlines’ flight performances city-by-city and overall.
+
+```{r}
+df %>% group_by(Airline) %>% summarize(sum(Amount))
+```
+
+AMWEST had about double the amount of flights compared to ALASKA from the 5 cities inspected. We saw that overall there were more delays for AMWEST, but by overall percentage the performance was better for AMWEST, which is explained by AMWEST having so many more flights. However, on a city-by-city basis we see AMWEST consistently having more delays. If we did a weighted average we'd find that AMWEST would have a higher average percent of delays.
+
+```{r}
+# Trying different things to get weighted average
+#AMtot <- df %>% filter(Airline == "AMWEST") %>% summarize(sum(Amount))
+#make list of weights - the total amount of flights for each airline
+#weighting <- c(3775, 3775, 3775, 3775, 3775, 3775, 3775, 3775, 3775, 3775, 7225, 7225, 7225, 7225, 7225, 7225, 7225, 7225, 7225, 7225)
+#weighting <- 3775/7225
+
+#df %>% group_by(Airline) %>% filter(Status == "delayed") %>% summarize(weighted_mean = weighted.mean(Amount, w = weighting))
+
+
+
+# Simpler shown via the below
+AL_tot <- 3775
+AM_tot <- 7225
+AL_weight <- AL_tot / sum(AL_tot, AM_tot)
+AM_weight <- AM_tot / sum(AL_tot, AM_tot)
+
+perc_delays %>% mutate(weighted_percents = percent_delayed*c(AL_weight,AM_weight))
+```
+
