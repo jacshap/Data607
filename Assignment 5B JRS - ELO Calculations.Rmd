@@ -1,0 +1,517 @@
+---
+title: 'Assignment 5B: ELO Calculations'
+author: "Jacob Shapiro"
+date: "`r Sys.Date()`"
+output: 
+  html_document:
+   df_print: paged
+---
+
+<style type="text/css">
+.main-container {
+  max-width: 100% !important;
+  margin: auto;
+}
+options("width"=300)
+</style>
+<!-- Note need above for all columns to appear together -->
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+## Import table & get it formatted
+
+Need to import text file in some way - will take some experimenting but can start with delimiter of "-----------------------------------------------------------------------------------------".
+
+```{r , include = FALSE}
+library(dplyr)
+library(tidyverse)
+library(readr)
+```
+
+
+```{r}
+chess <- read_delim("https://raw.githubusercontent.com/jacshap/Data607/refs/heads/main/tournamentinfo.txt", delim = "-----------------------------------------------------------------------------------------", col_names = TRUE, show_col_types = FALSE) 
+
+#to fix problems let`s get rid of 2nd column and omit NA rows to clean
+names(chess)[1] <- "base"
+chess <- chess %>% select(base)
+chess <- na.omit(chess)
+```
+
+Now we`ve read in the file by row and need to split per the delimiter "|". Retitle columns, drop last column because R wanted to keep the last "|" in Round 7, and drop first two rows because those used to be the headers.
+
+```{r}
+library(tidyr)
+chess <- separate_wider_delim(chess, cols = base, delim = "|", names = c("Pair_Num", "Player_Name", "Total_Pts", "Round_1", "Round_2", "Round_3", "Round_4", "Round_5", "Round_6", "Round_7", "extra"), too_many = "merge") %>% select(-last_col()) %>% slice(-(1:2))
+head(chess)
+```
+Let`s get player`s state and other info from second line into first line with player`s name
+
+```{r}
+# Need to combine two rows at a time. Mutate with a group # and try the above again.
+
+chess_manip <- chess %>% mutate(Group = n() / 2)
+
+# Googled "r combine two rows at a time in dataframe"
+chess_manip <- chess %>% mutate(Group = ceiling(row_number() / 2))
+
+chess_manip <- chess_manip %>% group_by(Group) %>% summarise(Pair_Num = paste(Pair_Num, collapse = ","), Player_Name = paste(Player_Name, collapse = ","), Total_Pts = paste(Total_Pts, collapse = ","), Round_1 = paste(Round_1, collapse = ","), Round_2 = paste(Round_2, collapse = ","), Round_3 = paste(Round_3, collapse = ","), Round_4 = paste(Round_4, collapse = ","), Round_5 = paste(Round_5, collapse = ","), Round_6 = paste(Round_6, collapse = ","), Round_7 = paste(Round_7, collapse = ","))
+
+print(chess_manip)
+```
+
+Let's rename Group to Pair_Num, Pair_Num to State & get rid of stuff before comma, and for columns of Total Points through Round 7 let's get rid of the stuff after the comma.
+
+**NOTE: This method does not keep post-game ratings or N values**
+
+```{r}
+# Rename Columns
+chess_manip <- chess_manip %>% rename(State = Pair_Num, Pair_Num = Group)
+
+# Split and keep 2nd part of resulting list
+chess_manip <- chess_manip %>% mutate(State = sapply(strsplit(State, ","), `[`,2))
+
+# Similar for Total Pts & Rounds columns but keep first thing. Also remembered can use across()
+chess_manip <- chess_manip %>% mutate(across(Total_Pts:Round_7, ~ sapply(strsplit(.x, ","), `[`,1)))
+
+
+# Split Rounds columns on the space delimiter to keep who they played
+
+#chess_manip %>% mutate(across(Round_1:Round_7, ~ sapply(strsplit(.x, " "), `[`,2)))
+# Not keeping who they played, just keeping blank. Need to try different method? - Apparently adding in the + works on spaces
+chess_manip <- chess_manip %>% mutate(across(Round_1:Round_7, ~ sapply(strsplit(.x, " +"), `[`,2)))
+
+
+# Split Player_Name column on the comma and keep the pre-game rating in new column
+chess_manip <- separate_wider_delim(chess_manip, cols = Player_Name, delim = ",", names = c("Player_Name", "Pre_Game_Rank"))
+
+# splitted, now manipulate pre-game rank to be left in column
+chess_manip <- chess_manip %>% mutate(Pre_Game_Rank = sapply(strsplit(Pre_Game_Rank, "R: "), `[`, 2))
+
+# kept everything to the right of "R: "
+chess_manip <- chess_manip %>% mutate(Pre_Game_Rank = if_else(str_detect(Pre_Game_Rank,'P'), sapply(strsplit(Pre_Game_Rank, 'P'), `[`, 1), Pre_Game_Rank))
+
+# got rid of P stuff
+#chess_manip %>% mutate(Pre_Game_Rank, sapply(strsplit(Pre_Game_Rank, ' +'), `[`,1))
+# not working - try above if_else because some are already done
+#chess_manip %>% mutate(Pre_Game_Rank = if_else(str_detect(Pre_Game_Rank,' '), sapply(strsplit(Pre_Game_Rank, ' '), `[`, 1), Pre_Game_Rank))
+# close but got rid of some values. Get rid of spaces to left then try again
+chess_manip <- chess_manip %>% mutate(across(Pair_Num:Round_7, ~ trimws(.x, which = "left")))
+chess_manip %>% mutate(Pre_Game_Rank = if_else(str_detect(Pre_Game_Rank,' +'), sapply(strsplit(Pre_Game_Rank, ' +'), `[`, 1), Pre_Game_Rank))
+# Success!!
+chess_manip <- chess_manip %>% mutate(Pre_Game_Rank = if_else(str_detect(Pre_Game_Rank,' +'), sapply(strsplit(Pre_Game_Rank, ' +'), `[`, 1), Pre_Game_Rank))
+
+```
+
+Probably also a good idea to clean up extra spaces
+
+```{r}
+chess_manip <- chess_manip %>% mutate(across(Pair_Num:Round_7, ~ trimws(.x, which = "right")))
+chess_manip <- chess_manip %>% mutate(across(Pair_Num:Round_7, ~ trimws(.x, which = "left")))
+print(chess_manip)
+```
+
+
+# Calculate expected score
+
+Prompt: "Based on difference in ratings between the chess players and each of their opponents in our Project 1 tournament, calculate each player’s expected score (e.g. 4.3) and the difference from their actual score (e.g 4.0).  List the five players who most overperformed relative to their expected score, and the five players that most underperformed relative to their expected score."
+
+I'm interpreting this as asking across the tournament what is the expected score per game and add those up and that's the total expected score. Then subtract that from the actual score and see top 5 and bottom 5.
+
+Expected Score of Player A: E(A) = 1/(1+10^((Rating_B - Rating_A)/400)) (source: https://en.wikipedia.org/wiki/Elo_rating_system#:~:text=A%20player's%20expected%20score%20is,and%200%25%20chance%20of%20drawing.)
+
+
+### First chunk attempt - tried to be clean and do it in dataframe format. Kept getting stuck and couldn't troubleshoot.
+```{r, eval = FALSE}
+# Test case of finding position of Pair_Num that matches Round_1 and print that position for Pre_Game_Rank for first row
+round1 <- chess_manip %>% filter(Pair_Num == 1) %>% pull(Round_1)
+pre_game1 <- chess_manip %>% filter(Pair_Num == round1) %>% pull(Pre_Game_Rank)
+print(pre_game1)
+
+# To make it formulaic can try to take all values for the rounds per person and put into lists and then mutate the lists into columns.
+
+# Prep lists for for loop (couldn't figure out how to do it formulaicly with string manipulation in Project 1)
+
+# E1 <- c()
+# E2 <- c()
+# E3 <- c()
+# E4 <- c()
+# E5 <- c()
+# E6 <- c()
+# E7 <- c()
+player_rating_list<-c()
+pre_game1_list<-c()
+pre_game7_list<-c()
+E_df <- data.frame(E1 = numeric(0), E2 = numeric(0), E3 = numeric(0), E4 = numeric(0), E5 = numeric(0), E6 = numeric(0), E7 = numeric(0))
+pre_game5_list <- c()
+
+# For each row, loop will get player's pre-game rating, tournament opponent's row number for each round (e.g., round1), and will pull that opponents pre-game rating (pre_game1) based on row position. Also making all opponent pre-game ratings numeric after pulling.
+# Then will do expected value for each round and append to a list. Outside the loop will mutate the lists to chess_manip to show what they are, then do a sum column to get total expected score and compare to actual score, then do top 5 and bottom 5.
+
+for (i in 1:nrow(chess_manip)){
+  player_rating <- chess_manip %>% filter(Pair_Num == i) %>% pull(Pre_Game_Rank)
+  player_rating <- as.numeric(player_rating)
+  round1 <- chess_manip %>% filter(Pair_Num == i) %>% pull(Round_1)
+  pre_game1 <- chess_manip %>% filter(Pair_Num == round1) %>% pull(Pre_Game_Rank)
+  pre_game1 <- as.numeric(pre_game1)
+  round2 <- chess_manip %>% filter(Pair_Num == i) %>% pull(Round_2)
+  pre_game2 <- chess_manip %>% filter(Pair_Num == round2) %>% pull(Pre_Game_Rank)
+  pre_game2 <- as.numeric(pre_game2)
+  round3 <- chess_manip %>% filter(Pair_Num == i) %>% pull(Round_3)
+  pre_game3 <- chess_manip %>% filter(Pair_Num == round3) %>% pull(Pre_Game_Rank)
+  pre_game3 <- as.numeric(pre_game3)
+  round4 <- chess_manip %>% filter(Pair_Num == i) %>% pull(Round_4)
+  pre_game4 <- chess_manip %>% filter(Pair_Num == round4) %>% pull(Pre_Game_Rank)
+  pre_game4 <- as.numeric(pre_game4)
+  round5 <- chess_manip %>% filter(Pair_Num == i) %>% pull(Round_5)
+  pre_game5 <- chess_manip %>% filter(Pair_Num == round5) %>% pull(Pre_Game_Rank)
+  #testing
+  pre_game5[is.na(pre_game5)] <- 0
+  pre_game5 <- as.numeric(pre_game5)
+  round6 <- chess_manip %>% filter(Pair_Num == i) %>% pull(Round_6)
+  pre_game6 <- chess_manip %>% filter(Pair_Num == round6) %>% pull(Pre_Game_Rank)
+  pre_game6 <- as.numeric(pre_game6)
+  round7 <- chess_manip %>% filter(Pair_Num == i) %>% pull(Round_7)
+  pre_game7 <- chess_manip %>% filter(Pair_Num == round7) %>% pull(Pre_Game_Rank)
+  pre_game7 <- as.numeric(pre_game7)
+  
+  new_E1 <- 1/(1+10^((pre_game1 - player_rating)/400))
+  #trying to make NA values 0 to at least get into the data frame
+  new_E1[is.na(new_E1)] <- 0
+  new_E2 <- 1/(1+10^((pre_game2 - player_rating)/400))
+  new_E3 <- 1/(1+10^((pre_game3 - player_rating)/400))
+  new_E4 <- 1/(1+10^((pre_game4 - player_rating)/400))
+  new_E5 <- 1/(1+10^((pre_game5 - player_rating)/400))
+  new_E5[is.na(new_E5)] <- 0
+  new_E6 <- 1/(1+10^((pre_game6 - player_rating)/400))
+  new_E7 <- 1/(1+10^((pre_game7 - player_rating)/400))
+  
+  new_E_row <- data.frame(E1 = new_E1, E2 = new_E2, E3 = new_E3, E4 = new_E4, E5 = new_E5, E6 = new_E6, E7 = new_E7)
+  #Getting stuck at row 12 because Round 5 has an NA. It's assigning it as numeric (empty)
+  E_df <- rbind(E_df, new_E_row)
+  
+  # E1 <- c(E1, new_E1)
+  # E2 <- c(E2, new_E2)
+  # E3 <- c(E3, new_E3)
+  # E4 <- c(E4, new_E4)
+  # E5 <- c(E5, new_E5)
+  # E6 <- c(E6, new_E6)
+  # E7 <- c(E7, new_E7)
+  
+  player_rating_list<-c(player_rating_list, player_rating)
+  pre_game1_list<-c(pre_game1_list, pre_game1)
+  pre_game7_list<-c(pre_game7_list, pre_game7)
+  pre_game5_list<-c(pre_game5_list, pre_game5)
+}
+
+
+print(E1)
+print(pre_game1_list)
+print(player_rating_list)
+#sanity check that first E1 should be .887035727
+1/(1+10^((1436 - 1794)/400))
+
+
+print(E7)
+#double sanity check that 49th row of E7 should be 0.363923100
+1/(1+10^((0 - 1291)/400))
+#hmm this didn't work, let's make lists of player_rating, pre_game1, and pre_game7 to diagnose
+print(player_rating_list) #works correctly
+print(pre_game7_list) #saying the 49th value is 1283
+# Aha! So the list isn't being populated if there is an NA value for Round_7
+# Let's change from list format to dataframe to maybe fix this? At least visualize what's happening
+
+print(pre_game5_list)
+#ok, it's getting stuck at row 12. Let's just do same method from project 1 and put in lists, I may have overcomplicated by trying to simplify --> putting in another chunk
+```
+
+
+
+### 2nd chunk - tried to do lists but got stuck at row 12 with a NA value in row 5. Diagnosed and fixed in next chunk
+```{r, eval=FALSE}
+# Test case of finding position of Pair_Num that matches Round_1 and print that position for Pre_Game_Rank for first row
+round1 <- chess_manip %>% filter(Pair_Num == 1) %>% pull(Round_1)
+pre_game1 <- chess_manip %>% filter(Pair_Num == round1) %>% pull(Pre_Game_Rank)
+print(pre_game1)
+
+# To make it formulaic can try to take all values for the rounds per person and put into lists and then mutate the lists into columns.
+
+# Prep lists for for loop (couldn't figure out how to do it formulaicly with string manipulation in Project 1)
+
+E1 <- c()
+E2 <- c()
+E3 <- c()
+E4 <- c()
+E5 <- c()
+E6 <- c()
+E7 <- c()
+player_rating_list<-c()
+pre_game1_list<-c()
+pre_game7_list<-c()
+#E_df <- data.frame(E1 = numeric(0), E2 = numeric(0), E3 = numeric(0), E4 = numeric(0), E5 = numeric(0), E6 = numeric(0), E7 = numeric(0))
+E_list <- c()
+pre_game5_list <- c()
+
+# For each row, loop will get player's pre-game rating, tournament opponent's row number for each round (e.g., round1), and will pull that opponents pre-game rating (pre_game1) based on row position. Also making all opponent pre-game ratings numeric after pulling.
+# Then will do expected value for each round and append to a list. Outside the loop will mutate the lists to chess_manip to show what they are, then do a sum column to get total expected score and compare to actual score, then do top 5 and bottom 5.
+
+#Troubleshooting: filter rows 1 to 63 to see how round 6 and 7 are handled
+filt_chess_manip <- chess_manip %>% slice(1:63)
+
+for (i in 1:nrow(chess_manip)){
+  player_rating <- chess_manip %>% filter(Pair_Num == i) %>% pull(Pre_Game_Rank)
+  
+  round1 <- chess_manip %>% filter(Pair_Num == i) %>% pull(Round_1)
+  pre_game1 <- chess_manip %>% filter(Pair_Num == round1) %>% pull(Pre_Game_Rank)
+  
+  round2 <- chess_manip %>% filter(Pair_Num == i) %>% pull(Round_2)
+  pre_game2 <- chess_manip %>% filter(Pair_Num == round2) %>% pull(Pre_Game_Rank)
+  
+  round3 <- chess_manip %>% filter(Pair_Num == i) %>% pull(Round_3)
+  pre_game3 <- chess_manip %>% filter(Pair_Num == round3) %>% pull(Pre_Game_Rank)
+  
+  round4 <- chess_manip %>% filter(Pair_Num == i) %>% pull(Round_4)
+  pre_game4 <- chess_manip %>% filter(Pair_Num == round4) %>% pull(Pre_Game_Rank)
+  
+  round5 <- chess_manip %>% filter(Pair_Num == i) %>% pull(Round_5)
+  pre_game5 <- chess_manip %>% filter(Pair_Num == round5) %>% pull(Pre_Game_Rank)
+  
+  round6 <- chess_manip %>% filter(Pair_Num == i) %>% pull(Round_6)
+  pre_game6 <- chess_manip %>% filter(Pair_Num == round6) %>% pull(Pre_Game_Rank)
+  
+  round7 <- chess_manip %>% filter(Pair_Num == i) %>% pull(Round_7)
+  pre_game7 <- chess_manip %>% filter(Pair_Num == round7) %>% pull(Pre_Game_Rank)
+  
+  # put in list for troubleshooting
+  pre_game_char <- c(pre_game1, pre_game2, pre_game3, pre_game4, pre_game5, pre_game6, pre_game7)
+  
+  # make numeric
+  player_rating <- as.numeric(player_rating)
+  pre_game1 <- as.numeric(pre_game1)
+  pre_game2 <- as.numeric(pre_game2)
+  pre_game3 <- as.numeric(pre_game3)
+  pre_game4 <- as.numeric(pre_game4)
+  pre_game5 <- as.numeric(pre_game5)
+  pre_game6 <- as.numeric(pre_game6)
+  pre_game7 <- as.numeric(pre_game7)
+  # player_rating <- if_else(player_rating =="NA", 1000000000, as.numeric(player_rating))
+  # pre_game1 <- if_else(player_rating =="NA", 1000000000, as.numeric(pre_game1))
+  # pre_game2 <- if_else(player_rating =="NA", 1000000000, as.numeric(pre_game2))
+  # pre_game3 <- if_else(player_rating =="NA", 1000000000, as.numeric(pre_game3))
+  # pre_game4 <- if_else(player_rating =="NA", 1000000000, as.numeric(pre_game4))
+  # pre_game5 <- if_else(player_rating =="NA", 1000000000, as.numeric(pre_game5))
+  # pre_game6 <- if_else(player_rating =="NA", 1000000000, as.numeric(pre_game6))
+  # pre_game7 <- if_else(player_rating =="NA", 1000000000, as.numeric(pre_game7))
+
+  new_E1 <- 1/(1+10^((pre_game1 - player_rating)/400))
+  new_E2 <- 1/(1+10^((pre_game2 - player_rating)/400))
+  new_E3 <- 1/(1+10^((pre_game3 - player_rating)/400))
+  new_E4 <- 1/(1+10^((pre_game4 - player_rating)/400))
+  new_E5 <- 1/(1+10^((pre_game5 - player_rating)/400))
+  new_E6 <- 1/(1+10^((pre_game6 - player_rating)/400))
+  new_E7 <- 1/(1+10^((pre_game7 - player_rating)/400))
+  
+  
+  E1 <- c(E1, new_E1)
+  E2 <- c(E2, new_E2)
+  E3 <- c(E3, new_E3)
+  E4 <- c(E4, new_E4)
+  E5 <- c(E5, new_E5)
+  E6 <- c(E6, new_E6)
+  E7 <- c(E7, new_E7)
+  
+  player_rating_list<-c(player_rating_list, player_rating)
+  pre_game1_list<-c(pre_game1_list, pre_game1)
+  pre_game7_list<-c(pre_game7_list, pre_game7)
+  pre_game5_list<-c(pre_game5_list, pre_game5)
+}
+
+
+print(E1)
+print(pre_game1_list)
+print(player_rating_list)
+#sanity check that first E1 should be .887035727
+1/(1+10^((1436 - 1794)/400))
+
+
+print(E7)
+#double sanity check that 49th row of E7 should be 0.363923100
+1/(1+10^((0 - 1291)/400))
+#hmm this didn't work, let's make lists of player_rating, pre_game1, and pre_game7 to diagnose
+print(player_rating_list) #works correctly
+print(pre_game7_list) #saying the 49th value is 1283
+# Aha! So the list isn't being populated if there is an NA value for Round_7
+# Let's change from list format to dataframe to maybe fix this? At least visualize what's happening
+
+print(pre_game5_list)
+#ok, it's getting stuck at row 12. Let's just do same method from project 1 and put in lists, I may have overcomplicated by trying to simplify --> putting in another chunk
+```
+
+
+
+### 3rd chunk attempt - troubleshooting 2nd chunk
+```{r}
+# Test case of finding position of Pair_Num that matches Round_1 and print that position for Pre_Game_Rank for first row
+round1 <- chess_manip %>% filter(Pair_Num == 1) %>% pull(Round_1)
+pre_game1 <- chess_manip %>% filter(Pair_Num == round1) %>% pull(Pre_Game_Rank)
+print(pre_game1)
+
+# To make it formulaic can try to take all values for the rounds per person and put into lists and then mutate the lists into columns.
+
+# Prep lists for for loop (couldn't figure out how to do it formulaicly with string manipulation in Project 1)
+
+E1 <- c()
+E2 <- c()
+E3 <- c()
+E4 <- c()
+E5 <- c()
+E6 <- c()
+E7 <- c()
+player_rating_list<-c()
+pre_game1_list<-c()
+pre_game7_list<-c()
+#E_df <- data.frame(E1 = numeric(0), E2 = numeric(0), E3 = numeric(0), E4 = numeric(0), E5 = numeric(0), E6 = numeric(0), E7 = numeric(0))
+E_list <- c()
+pre_game5_list <- c()
+
+# For each row, loop will get player's pre-game rating, tournament opponent's row number for each round (e.g., round1), and will pull that opponents pre-game rating (pre_game1) based on row position. Also making all opponent pre-game ratings numeric after pulling.
+# Then will do expected value for each round and append to a list. Outside the loop will mutate the lists to chess_manip to show what they are, then do a sum column to get total expected score and compare to actual score, then do top 5 and bottom 5.
+
+#Troubleshooting: filter rows 1 to 63 to see how round 6 and 7 are handled
+filt_chess_manip <- chess_manip %>% slice(1:64) 
+filt_chess_manip <- filt_chess_manip %>% replace(is.na(.),"0")
+
+for (i in 1:nrow(filt_chess_manip)){
+  player_rating <- filt_chess_manip %>% filter(Pair_Num == i) %>% pull(Pre_Game_Rank)
+  
+  round1 <- filt_chess_manip %>% filter(Pair_Num == i) %>% pull(Round_1)
+  pre_game1 <- filt_chess_manip %>% filter(Pair_Num == round1) %>% pull(Pre_Game_Rank)
+  pre_game1 <- if(length(which(!is.na(pre_game1))) == 0){'1000000'} else {pre_game1}
+  
+  round2 <- filt_chess_manip %>% filter(Pair_Num == i) %>% pull(Round_2)
+  pre_game2 <- filt_chess_manip %>% filter(Pair_Num == round2) %>% pull(Pre_Game_Rank)
+  pre_game2 <- if(length(which(!is.na(pre_game2))) == 0){'1000000'} else {pre_game2}
+  
+  round3 <- filt_chess_manip %>% filter(Pair_Num == i) %>% pull(Round_3)
+  pre_game3 <- filt_chess_manip %>% filter(Pair_Num == round3) %>% pull(Pre_Game_Rank)
+  pre_game3 <- if(length(which(!is.na(pre_game3))) == 0){'1000000'} else {pre_game3}
+  
+  round4 <- filt_chess_manip %>% filter(Pair_Num == i) %>% pull(Round_4)
+  pre_game4 <- filt_chess_manip %>% filter(Pair_Num == round4) %>% pull(Pre_Game_Rank)
+  pre_game4 <- if(length(which(!is.na(pre_game4))) == 0){'1000000'} else {pre_game4}
+  
+  round5 <- filt_chess_manip %>% filter(Pair_Num == i) %>% pull(Round_5)
+  pre_game5 <- filt_chess_manip %>% filter(Pair_Num == round5) %>% pull(Pre_Game_Rank)
+  #is.na(pre_game5) <- pre_game5 == "NA"
+  pre_game5 <- if(length(which(!is.na(pre_game5))) == 0){'1000000'} else {pre_game5}
+  
+  round6 <- filt_chess_manip %>% filter(Pair_Num == i) %>% pull(Round_6)
+  pre_game6 <- filt_chess_manip %>% filter(Pair_Num == round6) %>% pull(Pre_Game_Rank)
+  pre_game6 <- if(length(which(!is.na(pre_game6))) == 0){'1000000'} else {pre_game6}
+  
+  round7 <- filt_chess_manip %>% filter(Pair_Num == i) %>% pull(Round_7)
+  pre_game7 <- filt_chess_manip %>% filter(Pair_Num == round7) %>% pull(Pre_Game_Rank)
+  pre_game7 <- if(length(which(!is.na(pre_game7))) == 0){'1000000'} else {pre_game7}
+  
+  # put in list for troubleshooting
+  pre_game_char <- c(pre_game1, pre_game2, pre_game3, pre_game4, pre_game5, pre_game6, pre_game7)
+  
+  # make numeric
+  numplayer_rating <- as.numeric(player_rating)
+  numpre_game1 <- as.numeric(pre_game1)
+  numpre_game2 <- as.numeric(pre_game2)
+  numpre_game3 <- as.numeric(pre_game3)
+  numpre_game4 <- as.numeric(pre_game4)
+  numpre_game5 <- as.numeric(pre_game5)
+  numpre_game6 <- as.numeric(pre_game6)
+  numpre_game7 <- as.numeric(pre_game7)
+  # numplayer_rating <- if_else(identical(player_rating, character(0)), 1000000000, as.numeric(player_rating))
+  # numpre_game1 <- if_else(identical(pre_game1, character(0)), 1000000000, as.numeric(pre_game1))
+  # numpre_game2 <- if_else(identical(pre_game2, character(0)), 1000000000, as.numeric(pre_game2))
+  # numpre_game3 <- if_else(identical(pre_game3, character(0)), 1000000000, as.numeric(pre_game3))
+  # numpre_game4 <- if_else(identical(pre_game4, character(0)), 1000000000, as.numeric(pre_game4))
+  # numpre_game5 <- if_else(identical(pre_game5, character(0)), 1000000000, as.numeric(pre_game5))
+  # numpre_game6 <- if_else(identical(pre_game6, character(0)), 1000000000, as.numeric(pre_game6))
+  # numpre_game7 <- if_else(identical(pre_game7, character(0)), 1000000000, as.numeric(pre_game7))
+
+  new_E1 <- 1/(1+10^((numpre_game1 - numplayer_rating)/400))
+  new_E2 <- 1/(1+10^((numpre_game2 - numplayer_rating)/400))
+  new_E3 <- 1/(1+10^((numpre_game3 - numplayer_rating)/400))
+  new_E4 <- 1/(1+10^((numpre_game4 - numplayer_rating)/400))
+  new_E5 <- 1/(1+10^((numpre_game5 - numplayer_rating)/400))
+  new_E6 <- 1/(1+10^((numpre_game6 - numplayer_rating)/400))
+  new_E7 <- 1/(1+10^((numpre_game7 - numplayer_rating)/400))
+  
+  
+  E1 <- c(E1, new_E1)
+  E2 <- c(E2, new_E2)
+  E3 <- c(E3, new_E3)
+  E4 <- c(E4, new_E4)
+  E5 <- c(E5, new_E5)
+  E6 <- c(E6, new_E6)
+  E7 <- c(E7, new_E7)
+  
+  player_rating_list<-c(player_rating_list, player_rating)
+  pre_game1_list<-c(pre_game1_list, pre_game1)
+  pre_game7_list<-c(pre_game7_list, pre_game7)
+  pre_game5_list<-c(pre_game5_list, pre_game5)
+}
+
+
+print(E1)
+print(pre_game1_list)
+print(player_rating_list)
+#sanity check that first E1 should be .887035727
+1/(1+10^((1436 - 1794)/400))
+
+
+print(E7)
+#double sanity check that 49th row of E7 should be 0 because they didn't play that round
+1/(1+10^((1000000 - 1291)/400))
+#hmm this didn't work, let's make lists of player_rating, pre_game1, and pre_game7 to diagnose
+print(player_rating_list) #works correctly
+print(pre_game7_list) #was saying the 49th value is 1283, now saying 0. 
+# Aha! So the list isn't being populated if there is an NA value for Round_7
+# Let's change from list format to dataframe to maybe fix this? At least visualize what's happening
+print(pre_game5_list)
+#ok, it's getting stuck at row 12. Let's just do same method from project 1 and put in lists, I may have overcomplicated by trying to simplify --> putting in another chunk
+# After slicing, I'm seeing the NA values are being pulled as character(0), it's messing stuff up.
+
+# Fixed - see below 
+```
+
+Fixed the above double sanity check. If the value in the chess_manip table was NA, I changed the value to 0 to give it a character value. Then if the pull in the first part was an empty character vector (character(0)) the dplyr if_else function wouldn't work because it needed a false value that wasn't length of 0, which is what I was trying to correct. Was examining variable that was character(0) to see if it was logically anythign and kept getting "logical(0)" - used https://stackoverflow.com/questions/48626193/logical0-in-if-statement to fix. Using base "if else" sattement format worked - I put it after each opponent round calculation to make sure it was working. If it was a character(0) that meant that they didn't play, so in order to make the expected value 0 I replaced character(0) with a big number and it worked!
+
+Now need to mutate expected values onto chess_manip table and sum
+
+```{r}
+E_chess_manip <- chess_manip %>% mutate(E_R1 = E1, E_R2 = E2, E_R3 = E3, E_R4 = E4, E_R5 = E5, E_R6 = E6, E_R7 = E7)
+E_chess_manip <- E_chess_manip %>% group_by(Pair_Num) %>% mutate(E_tot = sum(E_R1, E_R2, E_R3, E_R4, E_R5, E_R6, E_R7))
+knitr::kable(E_chess_manip)
+```
+
+
+
+## Calculate difference from actual score from table
+
+```{r}
+E_chess_manip$Total_Pts <- as.numeric(E_chess_manip$Total_Pts)
+E_chess_manip <- E_chess_manip %>% mutate(Score_minus_Expected = Total_Pts - E_tot)
+E_chess_manip <- E_chess_manip %>% arrange(desc(Score_minus_Expected))
+```
+
+
+## 5 players who most overperformed relative to their expected score, and the 5 players that most underperformed relative to their expected score
+
+```{r}
+final <- E_chess_manip %>% select(Pair_Num, State, Player_Name, Pre_Game_Rank, Total_Pts, E_tot, Score_minus_Expected)
+head(final, n=5)
+
+final <- final %>% arrange(Score_minus_Expected)
+head(final, n=5)
+```
+
+Fin
