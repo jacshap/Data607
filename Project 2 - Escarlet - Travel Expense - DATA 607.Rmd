@@ -1,0 +1,108 @@
+---
+title: "Escarlet Travel Expense Data Transformation - DATA 607 Project 2"
+author: "Jacob Shapiro"
+date: "`r Sys.Date()`"
+output: 
+  html_document :
+  df_knitr::kable: paged
+---
+<style type="text/css">
+.main-container {
+  max-width: 100% !important;
+  margin: auto;
+}
+options("width"=300)
+</style>
+<!-- Note need above for all columns to appear together -->
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Import wide text file
+
+```{r , include = FALSE}
+library(dplyr)
+library(tidyverse)
+library(readr)
+```
+
+Read in Escarlet's Travel Expense data that I put into a csv file.
+
+```{r}
+travel <- read_csv("https://raw.githubusercontent.com/jacshap/Data607/refs/heads/main/Escarlet%20Travel%20Expense%20Data.csv", col_names = TRUE, show_col_types = FALSE) 
+
+knitr::kable(travel)
+```
+
+## Format to long
+
+Get rid of subtotals column and rows of subtotals and Totals (rows 4, 8, and 9)
+
+```{r}
+#rename first column
+names(travel)[1] <- "Date"
+
+#remove subtotals column
+travel <- travel %>% select(Date, Meals, Hotels, Transport)
+
+#remove rows
+travel <- travel[-c(4,8,9),]
+
+knitr::kable(travel)
+
+```
+
+There will be 2 San Jose days and 2 Seattle days. Delete those rows and make list of city and append as a column.
+
+```{r}
+cities <- c('San Jose', 'San Jose', 'Seattle', 'Seattle')
+
+travel<- travel[-c(1, 4),]
+
+travel <- travel %>% mutate(City = cities)
+```
+
+Reorder to put Date first and City second
+
+```{r}
+travel <- travel[,c(1,5,2,3,4)]
+```
+
+Combine Meals, Hotels, and Transport into one column
+
+```{r}
+travel <- travel %>% pivot_longer(cols = 'Meals':'Transport',
+                               names_to = 'Category',
+                               values_to = "Amount"
+                               )
+
+knitr::kable(travel)
+```
+
+
+
+
+## Analysis
+
+Suggested analysis is "If tidied, the data could be used to analyze average expenses by city, compare spending across categories, or track changes in daily travel costs."
+
+### Average expenses by city
+
+```{r}
+#can divide sum by 2 because 2 days each
+travel %>% group_by(City) %>% select(City, Amount) %>% summarize(Total = sum(Amount)/2)
+```
+
+
+### Spending across categories
+
+```{r}
+travel %>% group_by(Category) %>% summarize(Total = sum(Amount))
+```
+
+### Changes in daily travel costs
+```{r}
+travel %>% group_by(Category) %>% mutate(lagged = lag(Amount, n=1)) %>% mutate(Daily_Difference = Amount - lagged) %>% select(-lagged) %>% arrange(Category)
+```
+

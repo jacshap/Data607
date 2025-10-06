@@ -1,0 +1,147 @@
+---
+title: "Project 2 - Jacob (me) - Labor Statistics"
+author: "Jacob Shapiro"
+date: "`r Sys.Date()`"
+output: 
+  html_document :
+  df_print: paged
+---
+<style type="text/css">
+.main-container {
+  max-width: 100% !important;
+  margin: auto;
+}
+options("width"=300)
+</style>
+<!-- Note need above for all columns to appear together -->
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Import wide text file
+
+```{r , include = FALSE}
+library(dplyr)
+library(tidyverse)
+library(readr)
+```
+
+I chose a dataset from the Bureau of Labor Statistics. I copied the webpage table and pasted it into Excel to make it a csv.
+
+Read in the data that is in csv file.
+
+```{r}
+jobs <- read_csv("https://raw.githubusercontent.com/jacshap/Data607/refs/heads/main/Jacob%20Shapiro%20Labor%20Statistics%20Data.csv", col_names = TRUE, show_col_types = FALSE) 
+
+names(jobs)[1] <- "State_and_area"
+names(jobs)[2] <- "Civilian_Labor_Force"
+
+knitr::kable(head(jobs,n=20))
+```
+
+Need to do a couple things.
+1. Move cities/areas to separate column and have states in left column.
+2. Fix first three rows to have appropriate titles. Will need to create columns for month and year.
+
+### Split states and areas
+
+Load list of states and make separate column based on that. Then make columns for Metro and State, then fill blank spaces and reorder.
+
+```{r}
+States <- c(state.name)
+non_states <- c("District of Columbia", "Puerto Rico")
+States <- append(States, non_states)
+States <- sort(States)
+
+jobs <- jobs %>% mutate(Metro = ifelse(State_and_area %in% States, "", State_and_area))
+jobs <- jobs %>% mutate(State = ifelse(State_and_area %in% States, State_and_area, NA))
+
+jobs <- jobs %>% fill(State)
+#jobs %>% mutate(Metro = ifelse(Metro =="", State, Metro))
+
+jobs <- jobs[,-1]
+jobs <- jobs %>% relocate(Metro)
+jobs <- jobs %>% relocate(State)
+```
+
+
+### Column titles and months/years
+
+1. Rename columns with "Label,Year,Month" so I can work with them. 
+2. Delete rows 1-3, and then pivot longer per section.
+3. Split Year and Month to separate columns.
+
+```{r}
+names(jobs)[3] <- "Civilian_Labor_Force,2024,July"
+names(jobs)[4] <- "Civilian_Labor_Force,2025,July"
+names(jobs)[5] <- "Civilian_Labor_Force,2024,August"
+names(jobs)[6] <- "Civilian_Labor_Force,2025,August"
+names(jobs)[7] <- "Unemployed_Number,2024,July"
+names(jobs)[8] <- "Unemployed_Number,2025,July"
+names(jobs)[9] <- "Unemployed_Number,2024,August"
+names(jobs)[10] <- "Unemployed_Number,2025,August"
+names(jobs)[11] <- "Unemployed_Percentage,2024,July"
+names(jobs)[12] <- "Unemployed_Percentage,2025,July"
+names(jobs)[13] <- "Unemployed_Percentage,2024,August"
+names(jobs)[14] <- "Unemployed_Percentage,2025,August"
+
+jobs <- jobs %>% slice(-c(1:3))
+
+#Need to make all columns same type. Let's go with doubles.
+
+jobs %>% mutate(across('Civilian_Labor_Force,2024,July':'Unemployed_Percentage,2025,August', as.double))
+#Shows that character columns with commas in it won't turn into doubles nicely
+
+#Remove commas and do pivot
+jobs <- jobs %>% mutate(across(where(is.character), ~str_remove_all(., ",")))
+
+jobs_long <- jobs %>% mutate(across('Civilian_Labor_Force,2024,July':'Unemployed_Percentage,2025,August', as.double)) %>% pivot_longer(cols = 'Civilian_Labor_Force,2024,July':'Unemployed_Percentage,2025,August',
+                      names_to = 'Type',
+                      values_to = "Amount")
+jobs_long <- jobs_long %>% separate(Type, into = c("Type","Year","Month"), sep = ",")
+
+knitr::kable(head(jobs_long, n=20))
+```
+
+
+
+## Analysis
+
+### Which metro in each state has the highest difference between "Civilian labor force" and "Unemployed"
+
+To get most recent let's do analysis for August 2025.
+
+Filter for August 2025, the two types in question, and that metro isn't blank (those are overall state values).
+
+I'm interpreting "difference" as magnitude of relative difference between the two numbers. Analysis will be for percentage - formula: Unemployed/Civilian Labor Force. The larger the number, the more relative unemployed people there are.
+
+```{r}
+jobs_aug24 <- jobs_long %>% filter(Year == "2025", Month == "August", Type == "Unemployed_Number" | Type == "Civilian_Labor_Force", Metro != "")
+
+#jobs_aug24 %>% group_by(Metro) %>% mutate(Unemployment_Rate = Type[Unemployed_Number]/Type[Civilian_Labor_Force])
+#Realizing this is kind of dumb because would need to filter for both types and save as separate data frames then left join in order to be able to call each column name. This formula is the unemployment rate, which is already calculated by the bureau. Going to just reframe using that calculation.
+
+jobs_aug24 <- jobs_long %>% filter(Year == "2025", Month == "August", Type == "Unemployed_Percentage", Metro != "")
+
+jobs_aug24 <- jobs_aug24 %>% group_by(State) %>% mutate(Highest_Unemployment_Rate = max(Amount)) %>% filter(Amount==Highest_Unemployment_Rate) %>% arrange(desc(Amount))
+
+knitr::kable(jobs_aug24)
+```
+
+4 states had ties for highest unemployment rate, which is why there's 56 rows instead of 52.
+
+### Graph of percent unemployment per state
+
+Filter for whole states (no metros) for August 2025, then graph.
+
+```{r}
+jobs_states <- jobs_long %>% filter(Year == "2025", Month == "August", Type == "Unemployed_Percentage", Metro == "")
+
+ggplot(data = jobs_states, aes(x=reorder(State,Amount), y=Amount, fill=State)) + 
+  geom_bar(stat="identity") +
+  labs(title = "Percent Unemployment by State", x = "State", y = "Percent Unemployment") + 
+  coord_flip()+
+  theme_light()
+```
+

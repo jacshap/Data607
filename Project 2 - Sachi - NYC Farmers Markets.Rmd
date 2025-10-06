@@ -1,0 +1,89 @@
+---
+title: "Project 2 - Sachi - NYC Farmers Markets"
+author: "Jacob Shapiro"
+date: "`r Sys.Date()`"
+output: 
+  html_document :
+  df_print: paged
+---
+<style type="text/css">
+.main-container {
+  max-width: 100% !important;
+  margin: auto;
+}
+options("width"=300)
+</style>
+<!-- Note need above for all columns to appear together -->
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Import wide text file
+
+```{r , include = FALSE}
+library(dplyr)
+library(tidyverse)
+library(readr)
+```
+
+Read in Sachi's NYC Farmers Markets data that is in csv file.
+
+```{r}
+farmers <- read_csv("https://raw.githubusercontent.com/jacshap/Data607/refs/heads/main/nyc_farmers_markets_visitors_wide.csv", col_names = TRUE, show_col_types = FALSE) 
+
+knitr::kable(farmers)
+```
+
+## Format to long
+
+```{r}
+farmers <- farmers %>% pivot_longer(cols = 'Manhattan_Count':'StatenIsland_Count',
+                               names_to = 'Borough',
+                               values_to = "Count")
+#clean up
+farmers <- farmers %>% mutate(Borough = str_replace_all(Borough, c("_Count"="")))
+
+knitr::kable(farmers)
+```
+
+
+
+## Analysis
+
+Will do 2 analyses suggested by Sachi
+1. Compare week-over-week trends by borough (levels + % change).
+2. Compute share of total visitors each week (who’s contributing most).
+
+### Week-over-week by borough
+
+% change = (new value - old value)/old value * 100
+
+```{r}
+perc_change <- farmers %>% group_by(Borough) %>% mutate(lagged_perc = lag(Count)) %>% mutate(percent_change = (Count - lagged_perc)/lagged_perc*100) %>% select(Week, Borough, Count, percent_change)
+
+perc_change <- perc_change[-(1:5),] %>% arrange(Borough)
+
+knitr::kable(perc_change)
+
+ggplot(data=perc_change, aes(x=Week, y=percent_change, fill = Borough)) + 
+  geom_bar(stat="identity", position = "dodge") +
+  labs(title = "Percent Change per Borough", x = "Week", y = "Percent Change") + 
+  theme_light()
+```
+
+### Share of total visitors each week
+
+```{r}
+week_sum <- farmers %>% group_by(Week) %>% mutate(Sum_Week = sum(Count))
+
+Visitor_Split_Percentage <- week_sum %>% mutate(Visitor_Split = Count/Sum_Week*100)
+
+knitr::kable(Visitor_Split_Percentage)
+
+ggplot(data=Visitor_Split_Percentage, aes(x=Week, y=Visitor_Split, fill = Borough)) + 
+  geom_bar(stat="identity", position = "dodge") +
+  labs(title = "Share of Visitors per Borough", x = "Week", y = "Percent of Visitors") + 
+  theme_light()
+```
+
