@@ -1,0 +1,192 @@
+---
+title: "Assignment 7 - HTML, XML, JSON - DATA 607"
+author: "Jacob Shapiro"
+date: "`r Sys.Date()`"
+output: 
+  html_document :
+  df_print: paged
+---
+<style type="text/css">
+.main-container {
+  max-width: 100% !important;
+  margin: auto;
+}
+options("width"=300)
+</style>
+<!-- Note need above for all columns to appear together -->
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r , include = FALSE}
+library(dplyr)
+library(tidyverse)
+library(readr)
+```
+
+## Prompt
+
+Pick three of your favorite books on one of your favorite subjects. At least one of the books should have more
+than one author. For each book, include the title, authors, and two or three other attributes that you find
+interesting.
+
+Take the information that you’ve selected about these three books, and separately create three files which
+store the book’s information in HTML (using an html table), XML, and JSON formats (e.g. “books.html”,
+“books.xml”, and “books.json”). To help you better understand the different file structures, I’d prefer that you
+create each of these files “by hand” unless you’re already very comfortable with the file formats.
+
+Write R code, using your packages of choice, to load the information from each of the three sources into
+separate R data frames. Are the three data frames identical?
+
+Your deliverable is the three source files and the R code. If you can, package your assignment solution up into
+an .Rmd file and publish to rpubs.com. [This will also require finding a way to make your three text files
+accessible from the web].
+
+## Response
+
+My favorite subject is comedy or comedians so I'll pick 2 books that I've read, and one with multiple authors.
+
+The additional attributes will be page number, publish year, and any awards the book has won.
+
+1. Egghead by Bo Burnham
+2. Dril Official "Mr. Ten Years" Anniversary Collection by Dril
+3. Good Omens: The Nice and Accurate Prophecies of Agnes Nutter, Witch by Terry Pratchett & Neil Gaiman
+
+I've worked with these three file types before so I'm going to make a dataframe here and publish the files, then upload to github, then read them in here and display.
+
+### Data files
+
+```{r}
+df <- data.frame(
+  Titles = c("Egghead; or, You Can't Survive on Ideas Alone", 'Dril Official "Mr. Ten Years" Anniversary Collection', "Good Omens: The Nice and Accurate Prophecies of Agnes Nutter, Witch"),
+  Authors = c("Bo Burnham", "Dril","Terry Pratchett & Neil Gaiman"),
+  Page_Number = c("240","420","491"),
+  Publish_Year = c("2013", "2018", "1990"),
+  Awards = c("Goodreads Choice Award Nominee for Poetry (2013)", "", "Locus Award Nominee for Best Fantasy Novel (1991), World Fantasy Award Nominee for Best Novel (1991), Audie Award Nominee for Audio Drama and for Fantasy (2023)")
+)
+knitr::kable(head(df))
+```
+
+Write to html
+
+```{r}
+#install.packages('tableHTML')
+library(tableHTML)
+write_tableHTML(tableHTML(df, rownames = FALSE), file = 'Ass7_Book_Table.html')
+```
+
+Uploaded HTML file to Github
+
+Import HTML and write to XML
+
+```{r, eval = FALSE}
+#install.packages('xml2')
+library('xml2')
+h <- read_html("https://raw.githubusercontent.com/jacshap/Data607/refs/heads/main/Ass7_Book_Table.html")
+tmp <- tempfile(fileext = ".xml")
+write_xml(h, tmp, options = "as_xml")
+#readLines(tmp)
+writeLines(readLines(tmp), "Ass7_Book_Table.xml")
+```
+
+Ok so the above didn't work :( made XML file manually. Will import below.
+
+
+Export to JSON
+
+```{r}
+#install.packages("jsonlite")
+library(jsonlite)
+write_json(df,"Ass7_Book_Table.json", pretty = TRUE, auto_unbox = TRUE)
+```
+
+
+### Read files in
+
+Read HTML
+
+```{r}
+library("rvest")
+html_book_table <- read_html("https://raw.githubusercontent.com/jacshap/Data607/refs/heads/main/Ass7_Book_Table.html", rownames = FALSE) %>% html_table() %>% .[[1]]
+#had to add the .[[1]] because was returning a list
+knitr::kable(head(html_book_table))
+```
+
+Read XML (manually created file)
+
+```{r, eval=FALSE}
+xml_book_table <- xml2::read_xml('https://raw.githubusercontent.com/jacshap/Data607/refs/heads/main/Ass7_XML_file_of_books.xml')
+print(xml_book_table)
+```
+Still does not work...
+Trying to follow solution from here: https://stackoverflow.com/questions/17198658/how-to-parse-an-xml-file-to-an-r-data-frame
+
+```{r}
+#install.packages("XML")
+library(XML)
+#data <- xmlParse("https://raw.githubusercontent.com/jacshap/Data607/refs/heads/main/Ass7_XML_file_of_books.xml")
+#Getting an "Error: XML content does not seem to be XML: ''"
+
+#Trying RCurl per https://stackoverflow.com/questions/23584514/error-xml-content-does-not-seem-to-be-xml-r-3-1-0
+#install.packages("RCurl")
+library(RCurl)
+
+fileURL <- "https://raw.githubusercontent.com/jacshap/Data607/refs/heads/main/Ass7_XML_file_of_books.xml"
+xData <- getURL(fileURL, ssl.verifyPeer=FALSE)
+doc <- xmlParse(xData)
+
+#OK apparently there are "escape characters" which I had to replace in the xml file. Now it's working
+
+xml_data <- xmlToList(doc)
+
+authors <- as.list(xml_data[["book"]][["author"]])
+#ok well this isn't working either. Let's go back to xml2 package
+```
+
+
+back to xml2 - following solution from https://stackoverflow.com/questions/33446888/r-convert-xml-data-to-data-frame
+
+```{r}
+library(xml2)
+xml_data <- xml2::read_xml('https://raw.githubusercontent.com/jacshap/Data607/refs/heads/main/Ass7_XML_file_of_books.xml')
+print(xml_data)
+
+#good!
+titles <- xml_find_all(xml_data, "//title")
+titles <- trimws(xml_text(titles)) #makes a character list
+#could make function to do this but it's only 5 things so will just manually do it
+authors <- xml_find_all(xml_data, "//author")
+authors <- trimws(xml_text(authors))
+page_num <- xml_find_all(xml_data, "//page_number")
+page_num <- trimws(xml_text(page_num))
+pub_year <- xml_find_all(xml_data, "//publish_year")
+pub_year <- trimws(xml_text(pub_year))
+awards <- xml_find_all(xml_data, "//awards")
+awards <- trimws(xml_text(awards))
+
+#now build dataframe from character lists
+xml_dataframe <- data.frame(Titles = titles, Authors = authors, Page_Numbers = page_num, Publish_Year = pub_year, Awards = awards)
+knitr::kable(head(xml_dataframe))
+```
+
+
+
+Read JSON
+
+```{r}
+json_book_table <- fromJSON("https://raw.githubusercontent.com/jacshap/Data607/refs/heads/main/Ass7_Book_Table.json")
+knitr::kable(head(json_book_table))
+
+```
+
+recap for html table
+
+```{r}
+knitr::kable(head(html_book_table))
+```
+
+
+## Conclusion
+
+I got all the tables to be read in and look the same. There was a small difference in how the tables were being read in with consideration to the quotes of "Mr. Ten Years". I had done a single quote within the double quotes in the original dataframe, and the writing to html and json files changed the " character to `, thus it looked weird when printing to a knitr::kable table. Fixed by putting the double quotes in the single quotes.
