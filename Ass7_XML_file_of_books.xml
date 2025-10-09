@@ -1,14 +1,14 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <books>
 	<book id="1">
-		<title>Egghead; or, You Can't Survive on Ideas Alone</title>
+		<title>Egghead; or, You Can&apos;t Survive on Ideas Alone</title>
 		<author>Bo Burnham</author>
 		<page_number>240</page_number>
 		<publish_year>2013</publish_year>
 		<awards>Goodreads Choice Award Nominee for Poetry (2013)</awards>
 	</book>
 		<book id="2">
-		<title>Dril Official `Mr. Ten Years` Anniversary Collection</title>
+		<title>Dril Official &quot;Mr. Ten Years&quot; Anniversary Collection</title>
 		<author>Dril</author>
 		<page_number>420</page_number>
 		<publish_year>2018</publish_year>
@@ -16,7 +16,7 @@
 	</book>
 	<book id="3">
 		<title>Good Omens: The Nice and Accurate Prophecies of Agnes Nutter, Witch</title>
-		<author>Terry Pratchett & Neil Gaiman</author>
+		<author>Terry Pratchett &amp; Neil Gaiman</author>
 		<page_number>491</page_number>
 		<publish_year>1990</publish_year>
 		<awards>Locus Award Nominee for Best Fantasy Novel (1991), World Fantasy Award Nominee for Best Novel (1991), Audie Award Nominee for Audio Drama and for Fantasy (2023)</awards>
