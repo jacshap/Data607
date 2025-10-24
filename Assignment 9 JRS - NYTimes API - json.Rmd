@@ -1,0 +1,62 @@
+---
+title: "Week 9 - NYTimes API"
+author: "Jacob Shapiro"
+date: "`r Sys.Date()`"
+output: 
+  html_document :
+  df_print: paged
+---
+<style type="text/css">
+.main-container {
+  max-width: 100% !important;
+  margin: auto;
+}
+options("width"=300)
+</style>
+<!-- Note need above for all columns to appear together -->
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r , include = FALSE}
+library(dplyr)
+library(tidyverse)
+library(readr)
+library(jsonlite)
+library(rvest)
+```
+
+## Prompt
+
+Your task is to choose one of the New York Times APIs, construct an interface in R to read in the JSON data, and transform it into an R DataFrame.
+
+## Steps taken
+
+Signed up for an account using personal email. Followed "Get Started" page by making an app and chose the "Most Popular" API to utilize. My API key is showing as active and has a key and secret.
+
+I want to see the most viewed articles for the last seven days so will use the "/viewed/7.json" call. Based on documentation here: https://developer.nytimes.com/docs/most-popular-product/1/overview the call that should be made is https://api.nytimes.com/svc/mostpopular/v2/viewed/7.json?api-key=yourkey with my API key as the last string. This will be a GET method, so need to utilize a package that pulls in that fashion.
+
+## Try to GET
+
+```{r}
+json_pull <- fromJSON("https://api.nytimes.com/svc/mostpopular/v2/viewed/7.json?api-key=fN9YR1mUo8u1ZdIhMHmGr4FGklmvns5D")
+print(json_pull)
+```
+
+## Make it into a table
+
+OK. So there's a lot of data here including title, author, keywords, links, and metadata. Looks like data is nested under the results item in the json_pull list. Let's try to unnest.
+
+```{r}
+#Found example via Google AI
+wide_data <- json_pull %>%
+  as_tibble() %>%
+  unnest_wider(results) #did results because all data is nested under the part in the list
+
+knitr::kable(wide_data)
+```
+
+## Conclusion
+
+I believe I've accomplished the goal set by the prompt - this is an interface of reading in data from NY Times with my API key and transforming into a dataframe. 
