@@ -1,0 +1,107 @@
+---
+title: "TidyVerse CREATE Vignette"
+author: "Jacob Shapiro"
+date: "`r Sys.Date()`"
+output: 
+  html_document :
+  df_print: paged
+---
+<style type="text/css">
+.main-container {
+  max-width: 100% !important;
+  margin: auto;
+}
+options("width"=300)
+</style>
+<!-- Note need above for all columns to appear together -->
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+```
+
+```{r , include = FALSE}
+library(tidyverse)
+```
+
+## Stringr Package within TidyVerse
+
+The "stringr" (pronounce "stringer") package is a package within the TidyVerse that helps with string manipulation. For information on strings, you can refer to chapter 14 of Hadley's R for Data Science https://r4ds.hadley.nz/strings. stringr is built on top of stringi, which uses the ICU C library to provide fast, correct implementations of common string manipulations.
+
+## Installation
+
+You can install tidyverse, or just the stringr package.
+
+```{r, results="hide", message=FALSE}
+install.packages("tidyverse")
+library(tidyverse)
+```
+
+
+## Usage
+
+To illustrate usage of stringr functions, let's load a dataset. The dataset below is a Kaggle dataset that has fast food information: https://www.kaggle.com/datasets/tan5577/nutritonal-fast-food-dataset
+
+```{r, message=FALSE}
+food <- read_csv("https://raw.githubusercontent.com/jacshap/Data607/refs/heads/main/Tidyverse_FastFoodNutritionMenuV2.csv")
+
+head(food)
+```
+
+Stringr functions start with "str" and work with vectors of strings.
+
+### str_length
+
+We can see how long the first Item is
+
+```{r}
+str_length(food[1,2])
+```
+
+We get a length of 9, which matches Hamburger above.
+
+### str_count
+
+We can see the amount of vowels in the first 6 items
+
+```{r}
+food6 <- head(food, 6)
+
+str_count(food6$Item, "[aeiou]")
+```
+
+It may also be interesting to see how many of the 1148 observations in the data set are double or triple items.
+
+```{r}
+str_count(food$Item, "Double") %>% sum()
+str_count(food$Item, "Triple") %>% sum()
+```
+18 and 15, respectively - 33 total items of the 1148.
+
+### str_replace
+
+We can use str_replace to replace parts of a string. Let's replace McDonald with The Clown.
+
+```{r}
+food6$Company
+
+food6$Company %>% str_replace("McDonald", "The Clown")
+```
+
+### str_split
+
+We can split strings based on patterns as well. Let's split McDonald's on Mc into Donald's.
+
+```{r}
+food6$Company %>% str_split("Mc")
+```
+
+We can use regular expressions (regex) to split on capital letters. The regex "(?=[A-Z])" splits the string before an uppercase letter and keeps the character as the first part of the next string.
+
+```{r}
+str_split(food6$Company, "(?=[A-Z])", simplify = TRUE)
+
+```
+
+## Summary
+
+In this vignette we explored the stringr package and some functions that can be utilized on a sample fast food data set.
