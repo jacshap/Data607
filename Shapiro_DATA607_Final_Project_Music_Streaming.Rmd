@@ -1,0 +1,614 @@
+---
+title: "Shapiro_DATA607_Final_Project_Music_Streaming"
+author: "Jacob Shapiro"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    df_print: paged
+---
+<style type="text/css">
+.main-container {
+  max-width: 100% !important;
+  margin: auto;
+}
+table {
+  width: auto !important;
+  margin: 20px auto;
+  border-collapse: collapse;
+  table-layout: auto;  /* Allows columns to shrink to content */
+}
+th, td {
+  padding: 8px;
+  white-space: nowrap;  /* Prevents text wrapping */
+  width: auto;  /* Columns fit to content */
+}
+th {
+  background-color: #4472C4;
+  color: white;
+  font-weight: bold;
+}
+tr:hover {
+  background-color: #f5f5f5;
+}
+tr:nth-child(even) {
+  background-color: #f9f9f9;
+}
+options("width"=100)
+</style>
+<!-- Note need above for all columns to appear together -->
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(dplyr)
+library(tidyverse)
+library(httr)
+library(httr2)
+library(jsonlite)
+library(readr)
+library(purrr)
+library(rvest)
+library(ggplot2)
+library(knitr)
+```
+
+
+```{r, include=FALSE}
+Sys.setenv(SPOTIFY_CLIENT_ID = "4e7ede66ab81498e81d7f96770aa2338")
+Sys.setenv(SPOTIFY_CLIENT_SECRET = "5493c35c886c40f5a84c181352bd5017")
+```
+
+
+# Introduction
+
+I love music and mainly use Spotify as my music streamer of choice. Recently the AI-powered Spotify Wrapped have been lackluster and doesn't really give me great insight into my music listening habits. Spotify has an API with many endpoints and can be targeted at a user, which would give me the opportunity to pull and analyze my data. I'm also interested in how my listening habits compares across charts so I will also be comparing my Spotify data to Billboard. I'll be utilizing OAuth 2.0 for the API and getting access to the endpoints. The goal is to analyze and compare my top tracks, artists, and genres for 2025 to Billboard to see any overlaps. My conclusions will be how mainstream my music taste is and what my current top song, artist, and genre is (hypothesis is top song is Oslo by Matthew Hall, top artist is Jon Bellion, and top genre is Indie).
+
+--------------
+
+# Set up Spotify API & Import Data
+
+I set up an app with my Spotify account through developer.spotify.com. 
+
+My Spotify ID & Secret - stored as environment variables in my Rstudio session
+
+```{r}
+spot_ID <- Sys.getenv("SPOTIFY_CLIENT_ID")
+spot_secret <- Sys.getenv("SPOTIFY_CLIENT_SECRET")
+```
+
+## API Requests
+
+### OAuth 2.0
+
+Tried using RCurl package based on Spotify documentation using cURL. It wasn't working so I tried using the 'spotifyr' package but due to recent changes to the API authorization, that package also wasn't working. I ended up using the httr package and prompting Claude to produce a GET call similar to the example provided on the Spotify Web Developer page which was in javascript. To do OAuth 2.0 with current Spotify authorization you need to get permission by the user (me) and use a string from the resulting URL as the "authorization code", which is used to generate an "access token" which works for 1 hour after the token generates.
+
+Also was having issues with a proper redirect URI because Spotify won't allow a 'localhost'. Ended up being successful with http://127.0.0.1:8787 as a proxy for localhost because RStudio uses the 8787 port and 127.0.0.1 is a proxy for localhost.
+
+```{r, include=FALSE, eval=FALSE}
+# Attempts at getting authorization using google and stackoverflow answers
+# install.packages("RCurl")
+# library(RCurl)
+
+
+# Set client
+client <- oauth_client(
+      id = spot_ID,
+      secret = spot_secret,
+      token_url = "https://accounts.spotify.com/api/token"
+    )
+
+# Get access token
+req <- request("https://accounts.spotify.com/api/token") %>%
+      req_oauth_auth_code(
+        client = client,
+        auth_url = "https://api.spotify.com/v1/me/top/tracks?limit=50&offset=0",
+        scope = "read_data" # Specify required scopes
+      )
+
+# above not working
+url <- "https://accounts.spotify.com/api/token"
+token_Response <- POST(url,
+     encode="form",
+     body=list(
+       grant_type = "client_credentials",
+       client_id = spot_ID,
+       secret = spot_secret
+     )
+)
+
+response <- 
+  POST(url,
+       add_headers(Authorization = paste("Basic", ID_and_secret)),
+       body = list(grant_type = "client_credentials"),
+       encode = "form")
+
+
+
+# #HTTPS request (requires appropriate SSL certificates)
+# https_url <- "https://api.spotify.com/v1/me/top/tracks?limit=50&offset=0"
+# response_https <- getURL(https_url)
+# print(response_https) #401 error means bad token - URL is working
+# 
+# #Authenticate and pull
+# ID_and_secret <- paste(spot_ID, spot_secret, sep = ":")
+# 
+# # Basic authentication
+# auth_url <- "http://www.example.com/protected"
+# response_auth <- getURL(https_url, userpwd = ID_and_secret, httpauth = 1L) # 1L for basic auth
+# print(response_auth)
+```
+
+```{r, include=FALSE, eval=FALSE}
+# Trying using spotifyr package to skip to access token
+install.packages("spotifyr")
+library(spotifyr)
+
+# client ID and secret are set as environment variables - function below uses those
+access_token <- get_spotify_access_token() #getting error
+```
+
+```{r, include=FALSE, eval=FALSE}
+# Access token seemed to work so trying to get playlists and top tracks
+my_id <- 'jacobshapiro97'
+my_plists <- get_user_playlists(my_id) 
+top_tracks <- get_my_top_artists_or_tracks(type = 'tracks', 
+                             time_range = 'short_term', 
+                             limit = 5)
+# Getting error of "Illegal Scopes" which is pointing me to an issue with the Authorization Code - precursor to Access Token
+```
+
+```{r, include=FALSE, eval=FALSE}
+# Trying to preempt the token by specifying the scopes in the auth code with spotifyr
+install.packages("spotifyr")
+library(spotifyr)
+
+# Client ID and secret are set as environment variables - function below uses those
+access_token <- get_spotify_authorization_code(scope = scopes()[c(7,8,9,10,14,15)])
+
+# Having issues with URI. Can't use localhost so using http://127.0.0.1:8000/callback as instructed in https://developer.spotify.com/documentation/web-api/concepts/redirect_uri but changed port to 8787 because that's the port Rstudio defaults to - confirmed via https://community.spotify.com/t5/Spotify-for-Developers/INVALID-CLIENT-Insecure-redirect-URI-using-custom-URI/td-p/6919036/page/2
+#had to put port back to 8787 and take out "/callback" and then it worked
+```
+
+
+
+
+### Request User Authorization
+
+```{r, eval=FALSE}
+# trying with Claude
+# prompt: "write an r script that does a user authorization request to the spotify web api. build and send a GET request to the /authorize endpoint with the following parameters:Query ParameterRelevanceValueclient_idRequiredThe Client ID generated after registering your application.response_typeRequiredSet to code.redirect_uriRequiredThe URI to redirect to after the user grants or denies permission. This URI needs to have been entered in the Redirect URI allowlist that you specified when you registered your application (See the __app guide__). The value of redirect_uri here must exactly match one of the values you entered when you registered your application, including upper or lowercase, terminating slashes, and such."
+
+# Your Spotify credentials
+client_id <- spot_ID
+client_secret <- spot_secret
+redirect_uri <- "http://127.0.0.1:8787"
+scopes <- "user-top-read user-read-recently-played user-library-read" 
+#these look to be the relevant scopes needed for data I want to pull - a forum post indicated that some scopes are problematic and I confirmed when trying to add them here
+
+# Build the authorization URL
+auth_url <- modify_url(
+  "https://accounts.spotify.com/authorize",
+  query = list(
+    client_id = client_id,
+    response_type = "code",
+    redirect_uri = redirect_uri,
+    scope = scopes
+  )
+)
+
+# Print the authorization URL
+cat("Please visit this URL to authorize the application:\n\n")
+cat(auth_url, "\n\n")
+
+# Automatically open in browser (optional)
+browseURL(auth_url)
+
+# Instructions for user
+cat("After authorizing, you will be redirected to your redirect_uri.\n")
+cat("Copy the 'code' parameter from the URL and use it to request an access token.\n")
+cat("Example: http://localhost:8888/callback?code=AQBx7t...\n")
+cat("The code is everything after '?code='\n")
+
+```
+
+### Request an access token
+
+```{r}
+# Claude prompt: "write an r script to request an access token from the spotify web api. The body of this POST request must contain the following parameters encoded in application/x-www-form-urlencoded: Body ParametersRelevanceValuegrant_typeRequiredThis field must contain the value "authorization_code".codeRequiredThe authorization code returned from the previous request.redirect_uriRequiredThis parameter is used for validation only (there is no actual redirection). The value of this parameter must exactly match the value of redirect_uri supplied when requesting the authorization code. The request must include the following HTTP headers: Header ParameterRelevanceValueAuthorizationRequiredBase 64 encoded string that contains the client ID and client secret key. The field must have the format: Authorization: Basic <base64 encoded client_id:client_secret>Content-TypeRequiredSet to application/x-www-form-urlencoded."
+
+# Your Spotify credentials
+client_id <- spot_ID
+client_secret <- spot_secret
+authorization_code <- "AQAk6f0_Ou06KA4NcugyXAccs2Z86Rf2DOYJ8pY1-AN3OCzW_tWWDscPJt5KJOxotB27CU5B_Z0O7KbNHpFMdV9qaskpChFn-1dZCXijzr4WIfgoBAL0XOB6OoYQzBpCBvW-i8dOkv2QjLnULVf38uvUlBLWMfXrMcebSZYgr_TfsXyGNOByt_93J1Vjn2Dq2NZz2KQ5coEuGCQVM6Ig5TiHTEn9GcM05ICz5tfQ8g_NiCe3NHk"
+redirect_uri <- "http://127.0.0.1:8787"
+
+# Create base64 encoded authorization header
+auth_string <- paste0(client_id, ":", client_secret)
+auth_encoded <- base64enc::base64encode(charToRaw(auth_string))
+
+# Make POST request to get access token
+response <- POST(
+  url = "https://accounts.spotify.com/api/token",
+  add_headers(
+    Authorization = paste("Basic", auth_encoded),
+    `Content-Type` = "application/x-www-form-urlencoded"
+  ),
+  body = list(
+    grant_type = "authorization_code",
+    code = authorization_code,
+    redirect_uri = redirect_uri
+  ),
+  encode = "form"
+)
+
+# Parse the response
+token_data <- content(response, "parsed")
+
+# Extract access token
+access_token <- token_data$access_token
+refresh_token <- token_data$refresh_token
+
+# Print results
+print(paste("Access Token:", access_token))
+print(paste("Refresh Token:", refresh_token))
+print(paste("Expires in:", token_data$expires_in, "seconds"))
+```
+
+### Pull top artists
+
+```{r}
+# ChatGPT prompt: write an r script that mimics a javascript cURL request with the following parameters: curl --request GET \ --url https://api.spotify.com/v1/me/top/artists \ --header 'Authorization: Bearer 1POdFZRZbvb...qqillRxMr2z'
+## based on Spotify Web API widget for javascript cURL code
+
+# Spotify API endpoint
+url <- "https://api.spotify.com/v1/me/top/artists?time_range=long_term&limit=50&offset=0" #using long_term for ~ a year
+
+response <- GET(
+  url,
+  add_headers(Authorization = paste("Bearer", access_token))
+)
+
+# View status and content
+print(status_code(response))
+content <- content(response, as = "text", encoding = "UTF-8")
+
+# Use jsonlite to put in readable format
+data <- fromJSON(content, flatten = TRUE)
+
+# Item "previous" is empty, taking it out
+data2 <- data[-7]
+
+# Make wide table
+wide_artist_data <- data2 %>%
+  as_tibble()
+wide_artist_data <- wide_artist_data %>%
+  unnest_wider(items, names_sep = "_")
+
+# My top artists
+my_top_artists <- wide_artist_data %>% select(items_name, items_popularity)
+kable(head(my_top_artists))
+```
+
+
+### Pull top tracks
+
+Important data for this is track, album, artist, and popularity
+
+```{r}
+# Same query just need to change URL
+
+# Spotify API endpoint
+url <- "https://api.spotify.com/v1/me/top/tracks?time_range=long_term&limit=50&offset=0" #using long_term for ~ a year
+
+response <- GET(
+  url,
+  add_headers(Authorization = paste("Bearer", access_token))
+)
+
+# View status and content
+print(status_code(response))
+content <- content(response, as = "text", encoding = "UTF-8")
+
+# Use jsonlite to put in readable format
+data <- fromJSON(content, flatten = TRUE)
+
+#Item "previous" is empty, taking it out
+data2 <- data[-7]
+
+# Want to get artists  and other data for each track - need to unnest.
+wide_track_data <- data2 %>%
+  as_tibble() %>%
+  unnest_wider(items, names_sep = "_")
+
+# Artists are in dataframe in list of lists. Tried multiple methods of unnesting, see commented at bottom of chunk for further details. Noted that data2[[1]][[1]][[i]][[3]] would return results I was interested in.
+# Claude prompt: write a for loop in r to go 1-50 for i in data2[[1]][[1]][[i]][[3]] and store in dataframe
+# Create empty dataframe to store results
+artist_data <- list()
+
+# Loop through 1 to 50
+for (i in 1:50) {
+  # Extract data from nested structure
+  data_extract <- data2[[1]][[1]][[i]][[3]]
+  
+  # Convert to dataframe and add position
+  df <- as.data.frame(data_extract)
+  df$position <- i
+  
+  # Store in list
+  artist_data[[i]] <- df
+}
+
+# Combine all dataframes
+artist_data <- bind_rows(artist_data)
+
+colnames(artist_data)[1] <- "artist"
+
+# View result
+kable(head(artist_data))
+#Successfully made dataframe of artists with position of track in data2
+
+# #Unnest longer then making wide table might be easier?
+# data3 <- data2 %>% as_tibble() %>% unnest_longer(items) %>% unnest_longer(items$artists)
+# # head(data3)
+# #This is providing a dataframe which contains lists of dataframes. Need to pull artist out of items$artists
+# 
+# #Easier method - just make wider and extract "name" from dataframe from list in column items$artists (third item in the lists)
+# wide_track_data <- data2 %>%
+#   as_tibble() %>%
+#   unnest_wider(items, names_sep = "_")
+# 
+# colnames(data3)[1] <- "items_artists"
+# artist_data <- sapply(data3$items_artists, function(x) {
+#   sapply(x, function(df) df$name)
+# })
+# 
+# #data3 and down to here not working now. Trying new claude script
+# library(purrr)
+# # Method 1: Extract all artist names, keeping track structure
+# artist_names <- data2$items %>%
+#   map("artists") %>%  # Extract artists list from each item
+#   map(~.x$name)       # Extract name column from each dataframe
+# # Method 2: Create a dataframe with one row per artist
+# artist_df <- tibble(
+#   track_position = seq_along(data2$items),
+#   artists = map(data2$items, "artists")
+# ) %>%
+#   unnest_longer(artists, indices_to = "artist_position") %>%
+#   mutate(artist_name = artists$name) %>%
+#   select(track_position, artist_position, artist_name)
+# 
+# print(artist_df)
+# 
+# #claude prompt: you have a dataframe "wide_track_data" which contains a column "items_artists" which is a list of lists with one dataframe per list. Write an r script to extract the value of the "name" object from each dataframe
+# artist_data <- sapply(wide_track_data$items_artists, function(x) {
+#   sapply(x, function(df) df$name)
+# }) #successfully made list of artists
+# 
+# #Make list of lists into a dataframe with artists and their respective element numbers
+# #Claude prompt: you have a list "artist_data" of character lists. Write a simple r script with dplyr to make the values into a dataframe while keeping the position of "artist_data" for each artist
+# track_artist_df <- tibble(artist_data = artist_data) %>%
+#   mutate(row_id = row_number()) %>%
+#   unnest_longer(artist_data, indices_to = "artist_position")
+# head(track_artist_df)
+```
+
+Got artists. Now will make sub-table with track name, album, and popularity. Then will join with artist data.
+
+```{r}
+# My top track data
+my_top_tracks <- wide_track_data %>% select(items_name, items_album.name, items_popularity)
+
+# add position column to join with artist data
+my_top_tracks <- my_top_tracks %>%
+  mutate(position = row_number())
+my_top_tracks_joined <- artist_data %>% left_join(my_top_tracks, by = c("position" = "position"))
+
+kable(head(my_top_tracks_joined))
+```
+
+
+### Pull top genres
+
+This goal cannot wholistically be achieved as Spotify does not have great data on genres and there is no specific genre endpoints. The only genre data available that I could find is those tagged to artists as seen below:
+
+```{r}
+# The empty rows are lists of character(0) which is giving trouble with filtering. Also hard to get rid of.
+# Claude prompt: you have a column from a dataframe with each element being a list of a list. Extract the values in r. Some values are character(0)
+genres <- map(wide_artist_data$items_genres, ~{
+  unlisted <- unlist(.x)
+  if(length(unlisted) == 0) NA else unlisted
+})
+
+genres_clean <- genres[!is.na(genres)]
+
+# # Claude prompt: you have a list of lists "genres". Remove any nested lists with value of character(0) in r
+# # Remove character(0) from nested lists
+# genres_cleaned <- map(genres, ~.x[lengths(.x) > 0])
+# 
+# # Then remove any top-level lists that became empty
+# genres_cleaned <- genres_cleaned[lengths(genres_cleaned) > 0]
+# head(genres_cleaned)
+
+# Claude prompt: make those nested lists into a dataframe with each nested list as one row
+# Convert nested lists to dataframe with one row per list
+genres_df <- tibble(
+  list_id = 1:length(genres_clean),
+  genres = genres_clean
+) %>%
+  mutate(genres_string = map_chr(genres, ~paste(.x, collapse = ", ")))
+
+kable(print(genres_df))
+```
+
+Only 17 of my top 50 artists had any genres tagged to them, most being electronic dance music artists. We'll move forward with the project and do some analysis of popularity within the Spotify data itself to analyze mainstream-ness of my music taste.
+
+
+# Import Billboard Data
+
+Utilizing Billboard Year-End Hot 100 songs and artists lists.
+
+Artists: https://www.billboard.com/charts/year-end/2025/top-artists/
+
+```{r}
+# Claude prompt: write an r script to scrape the top artist names from this billboard web page https://www.billboard.com/charts/year-end/2025/top-artists/
+
+# URL to scrape
+url <- "https://www.billboard.com/charts/year-end/2025/top-artists/"
+
+# Read the webpage
+page <- read_html(url)
+
+# Extract artist names (adjust selector based on actual page structure)
+artists <- page %>%
+  html_nodes(".o-chart-results-list-row h3") %>%
+  html_text() %>%
+  trimws()
+
+# Create dataframe
+bb_artists <- tibble(
+  rank = 1:length(artists),
+  artist_name = artists
+)
+
+kable(head(bb_artists, 10))
+```
+
+Songs: https://www.billboard.com/charts/year-end/2025/hot-100-songs/
+
+```{r}
+# URL to scrape
+url <- "https://www.billboard.com/charts/year-end/2025/hot-100-songs/"
+
+# Read the webpage
+page <- read_html(url)
+
+# Extract artist names (adjust selector based on actual page structure)
+songs <- page %>%
+  html_nodes(".o-chart-results-list-row h3") %>%
+  html_text() %>%
+  trimws()
+
+# Create dataframe
+bb_songs <- tibble(
+  rank = 1:length(songs),
+  song_name = songs
+)
+
+kable(head(bb_songs, 10))
+```
+
+
+# Analysis
+
+We'll be investigating overlaps of songs and artists with Billboards 2025 year-end lists from above with my Spotify top 50 songs and artists. Then we'll dig a little deeper into the Spotify data obtained.
+
+## Song Overlap
+
+```{r}
+matched_songs <- my_top_tracks %>%
+  inner_join(bb_songs, by = c("items_name" = "song_name"))
+
+kable(head(matched_songs))
+```
+
+We find that there's no overlapping songs.
+
+## Artist Overlap
+
+```{r}
+matched_artists <- my_top_artists %>%
+  inner_join(bb_artists, by = c("items_name" = "artist_name"))
+
+kable(head(matched_artists))
+```
+
+There are 4 overlapping artists between Billboard Top 100 and my top Spotify artists for 2025. All artists have relative popularity scores of at least 84 on Spotify. 
+
+## Spotify Popularity
+
+### Popularity Graph
+
+Spotify provides popularity scores for both songs and artists so let's graph my popularity map for both.
+
+```{r, fig.align = 'center'}
+# Claude prompt: write a simple r script with ggplot2 to graph a scatterplot of "items_popularity" for two sets of data "my_top_tracks" and "my_top_artists", each set should have its own symbol
+
+# Add a type column to each dataset
+my_top_tracks <- my_top_tracks %>%
+  mutate(type = "Track",
+         index = row_number())
+
+my_top_artists <- my_top_artists %>%
+  mutate(type = "Artist",
+         index = row_number())
+
+# Combine datasets
+combined_data <- bind_rows(my_top_tracks, my_top_artists)
+
+# Create scatterplot
+ggplot(combined_data, aes(x = index, y = items_popularity, color = type, shape = type)) +
+  geom_point(size = 3, alpha = 0.7) +
+  labs(title = "Popularity of Top Tracks vs Top Artists From Spotify",
+       x = "Rank of Spotify Item",
+       y = "Popularity Score",
+       color = "Type",
+       shape = "Type") +
+  theme_minimal() +
+  scale_color_manual(values = c("Track" = "steelblue", "Artist" = "coral")) +
+  scale_shape_manual(values = c("Track" = 16, "Artist" = 17))  # 16=circle, 17=triangle
+```
+
+From the graph I'm seeing the minority of tracks above the popularity score of 50, but seeing the inverse for artists. The popularity of a track is a value between 0 and 100, with 100 being the most popular. The popularity is calculated by algorithm and is based, in the most part, on the total number of plays the track has had and how recent those plays are. Based on this, we can assume 50 is the average popularity of the songs and artists at the time of pulling data from the API. Let's pull these respective lists above and below 50.
+
+```{r, fig.align = 'center'}
+# Above 50 popularity songs
+
+table <- my_top_tracks_joined %>% filter(items_popularity > 50) %>% select(artist, items_name, items_popularity, position) %>% arrange(desc(items_popularity))
+kable(table)
+
+# Below 50 popularity artists
+
+table <- my_top_artists %>% filter(items_popularity < 50) %>% select(items_name, items_popularity, index) %>% arrange(desc(items_popularity))
+kable(table)
+```
+
+Most of the songs make sense for being over a score of 50 - End of Beginning and Austin (Boots Stop Workin') were songs that got popular through social media and stayed on playlists, One Direction is always popular, and YUNGBLUD and Kygo are relatively popular so even older music makes sense to still be popular. I was surprised by See The Light by Stephen Sanchez and Halloween by Novo Amor being so popular. Upon further inspection, Stephen Sanchez has almost 20 million monthly listeners and See The Light has around 50 million plays, and Novo Amor has 10 million monthly listeners.
+
+The artists below popularity score of 50 all have less than a million monthly listeners, most less than 500k monthly, so that makes sense.
+
+### T Tests
+
+Assuming an average popularity score of 50, we can use a t test to statistically test how mainstream my music taste is.
+
+#### Songs
+
+```{r}
+tracks_ttest <- t.test(my_top_tracks$items_popularity, mu = 50)
+print(tracks_ttest)
+
+# Key values
+cat("\n--- Summary ---\n")
+cat("Sample Mean:", mean(my_top_tracks$items_popularity), "\n")
+cat("t-statistic:", tracks_ttest$statistic, "\n")
+cat("p-value:", tracks_ttest$p.value, "\n")
+cat("95% Confidence Interval:", tracks_ttest$conf.int[1], "to", tracks_ttest$conf.int[2], "\n")
+```
+
+#### Artists
+
+```{r}
+artist_ttest <- t.test(my_top_artists$items_popularity, mu = 50)
+print(artist_ttest)
+
+# Key values
+cat("\n--- Summary ---\n")
+cat("Sample Mean:", mean(my_top_artists$items_popularity), "\n")
+cat("t-statistic:", artist_ttest$statistic, "\n")
+cat("p-value:", artist_ttest$p.value, "\n")
+cat("95% Confidence Interval:", artist_ttest$conf.int[1], "to", artist_ttest$conf.int[2], "\n")
+```
+
+# Conclusions
+
+Overall, we saw that none of of my 50 top songs were in Billboard's Hot 100, and only 4 artists were in Billboard's Top 100 Artists for 2025. When it comes to Spotify-specific data, I am statistically more likely to listen to artists that have a popularity score of over 50, but when it comes to songs I'm likely to listen to songs with a popularity score of less than 50. Keeping in mind this data set was only my top 50 songs and artists, it's possible the majority of artists I listen to have less than a popularity score of 50 but we'd need to pull in more data to come to a conclusion on that. However, based on the data I think it's safe to infer the majority of songs I listen to have a popularity score less than 50 because the songs most popular for me would also be popular for everyone else if I had mainstream music taste. 
+
+It is pertinent to think of confounding factors and the nature of the music industry and how that can impact our inferences. Spotify has over 11 million artists and creators worldwide, but over 100 million tracks available with ~60,000 new tracks uploaded daily. There's only so much time in the day for people to listen to all these tracks - my Spotify wrapped said I only listened to songs and podcasts (mainly songs) for 55,000 minutes. Spotify also heavily utilizes algorithms for recommendations on new tracks for users. Their recommendations can come after you've finished a playlist, if you select one of the several personally targeted daily-generated playlists, or even via their Spotify DJ feature. I can conclude that my music taste isn't mainstream based on a p-value and assumptions, but I am still heavily influenced by the music that Spotify feeds me. I tend to listen to the Daily Mixes, daylist, Discover Weekly, and sometimes don't notice when a playlist ends. With this in mind, I have my artists I follow and decide to listen to their music here and there, but how mainstream my music taste is is mostly determined by Spotify's algorithm.
